@@ -9,12 +9,19 @@
 
 	let { item, onUpdate, onClose }: Props = $props();
 
+	/* svelte-ignore state_referenced_locally */
 	let title = $state(item.title);
+	/* svelte-ignore state_referenced_locally */
 	let description = $state(item.description || '');
+	/* svelte-ignore state_referenced_locally */
 	let assignedTo = $state(item.assignedTo || '');
+	/* svelte-ignore state_referenced_locally */
 	let priority = $state(item.priority);
+	/* svelte-ignore state_referenced_locally */
 	let storyPoints = $state(item.storyPoints);
+	/* svelte-ignore state_referenced_locally */
 	let remainingWork = $state(item.remainingWork);
+	/* svelte-ignore state_referenced_locally */
 	let tags = $state(item.tags || '');
 
 	$effect(() => {
@@ -64,8 +71,10 @@
 	onkeydown={handleKeydown}
 	role="dialog"
 	aria-modal="true"
+	tabindex="-1"
 >
-	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="mx-4 w-full max-w-2xl rounded-xl bg-white dark:bg-surface-900 shadow-2xl" onclick={(e) => e.stopPropagation()}>
 		<!-- Header -->
 		<div class="flex items-center justify-between border-b border-surface-200 dark:border-surface-700 px-6 py-4">

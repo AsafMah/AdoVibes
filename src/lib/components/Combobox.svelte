@@ -16,6 +16,7 @@
 
 	let { id, value, placeholder = 'Type to search...', minChars = 1, debounceMs = 250, onSearch, onSelect }: Props = $props();
 
+	/* svelte-ignore state_referenced_locally */
 	let query = $state(value || '');
 	let results = $state<ComboboxOption[]>([]);
 	let isOpen = $state(false);
@@ -26,7 +27,6 @@
 	// Sync query when value changes externally (e.g. restored from config)
 	$effect(() => {
 		query = value || '';
-	});
 	});
 
 	function close() {

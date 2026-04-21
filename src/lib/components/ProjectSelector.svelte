@@ -29,7 +29,9 @@
 		searchTeams
 	}: Props = $props();
 
+	/* svelte-ignore state_referenced_locally */
 	let orgInput = $state(organization);
+	/* svelte-ignore state_referenced_locally */
 	let orgConnected = $state(!!organization);
 
 	$effect(() => {

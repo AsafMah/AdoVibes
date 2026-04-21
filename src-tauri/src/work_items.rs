@@ -1,5 +1,6 @@
 use crate::ado_client::AdoClient;
 use crate::types::*;
+use log::info;
 use tokio::sync::Mutex;
 use tauri::State;
 
@@ -10,6 +11,7 @@ pub async fn get_sprint_work_items(
     project: String,
     iteration_path: String,
 ) -> Result<Vec<WorkItem>, String> {
+    info!("Loading work items for sprint '{}'", iteration_path);
     let client = client.lock().await;
 
     // Query PBIs, Bugs, and Tasks in the given sprint

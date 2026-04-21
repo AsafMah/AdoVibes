@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { getAppState } from '$lib/stores/app.svelte';
 	import { getThemeState } from '$lib/stores/theme.svelte';
+	import { attachConsole } from '@tauri-apps/plugin-log';
 	import SprintSelector from '$lib/components/SprintSelector.svelte';
 	import type { Snippet } from 'svelte';
 
@@ -13,6 +14,8 @@
 
 	onMount(() => {
 		theme.init();
+		// Forward Rust logs to browser devtools console
+		attachConsole();
 	});
 </script>
 

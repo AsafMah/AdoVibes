@@ -1,6 +1,7 @@
 use crate::auth::AuthMethod;
 use crate::types::*;
 use anyhow::Result;
+use log::{info, warn};
 use reqwest::{Client, Response};
 use std::collections::HashMap;
 
@@ -26,14 +27,16 @@ async fn check_response(resp: Response, context: &str) -> Result<Response> {
     let url = resp.url().to_string();
     let body = resp.text().await.unwrap_or_default();
     let truncated = if body.len() > 500 { &body[..500] } else { &body };
-    anyhow::bail!(
+    let msg = format!(
         "{context} — HTTP {status}{retry} — {url}\n{body}",
         context = context,
         status = status,
         retry = retry_after.unwrap_or_default(),
         url = url,
         body = truncated,
-    )
+    );
+    warn!("{}", msg);
+    anyhow::bail!(msg)
 }
 
 impl AdoClient {
@@ -47,6 +50,7 @@ impl AdoClient {
     }
 
     pub fn set_auth(&mut self, auth: AuthMethod) {
+        info!("Auth method changed to {:?}", auth);
         self.auth = auth;
         self.projects_cache.clear();
         self.teams_cache.clear();
@@ -102,7 +106,9 @@ impl AdoClient {
     pub async fn search_projects(&mut self, org: &str, query: &str) -> Result<Vec<Project>> {
         let key = org.to_string();
         if !self.projects_cache.contains_key(&key) {
+            info!("Fetching all projects for org '{}' (cache miss)", org);
             let all = self.fetch_all_projects(org).await?;
+            info!("Cached {} projects for org '{}'", all.len(), org);
             self.projects_cache.insert(key.clone(), all);
         }
 
@@ -146,7 +152,9 @@ impl AdoClient {
     pub async fn search_teams(&mut self, org: &str, project: &str, query: &str) -> Result<Vec<Team>> {
         let key = (org.to_string(), project.to_string());
         if !self.teams_cache.contains_key(&key) {
+            info!("Fetching teams for '{}/{}' (cache miss)", org, project);
             let all = self.fetch_all_teams(org, project).await?;
+            info!("Cached {} teams for '{}/{}'", all.len(), org, project);
             self.teams_cache.insert(key.clone(), all);
         }
 

@@ -12,6 +12,7 @@
 	let { iterationPath, parentId, parentTitle, onSubmit, onClose }: Props = $props();
 
 	// parentId is stable for the lifetime of this dialog, initial capture is intentional
+	/* svelte-ignore state_referenced_locally */
 	let workItemType = $state(parentId ? 'Task' : 'Product Backlog Item');
 	let title = $state('');
 	let description = $state('');
@@ -53,8 +54,10 @@
 	onkeydown={handleKeydown}
 	role="dialog"
 	aria-modal="true"
+	tabindex="-1"
 >
-	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="mx-4 w-full max-w-lg rounded-xl bg-white dark:bg-surface-900 p-6 shadow-2xl" onclick={(e) => e.stopPropagation()}>
 		<div class="mb-4 flex items-center justify-between">
 			<h2 class="text-lg font-semibold text-surface-800 dark:text-surface-100">
