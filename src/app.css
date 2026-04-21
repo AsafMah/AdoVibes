@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton-svelte';
+@import '@skeletonlabs/skeleton/themes/cerberus';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html, body {
+  @apply h-full bg-surface-50 text-surface-900 dark:bg-surface-950 dark:text-surface-50;
+}
+
+/* Focus ring for keyboard navigation */
+.focus-ring:focus-visible {
+  @apply outline-2 outline-offset-2 outline-primary-500 rounded;
+}
+
+/* Board column transitions */
+.board-column {
+  @apply flex flex-col gap-2 min-h-[200px];
+}
+
+/* Drag and drop visual feedback */
+[data-dnd-dragging] {
+  @apply opacity-50;
+}
+
+[data-dnd-drop-target] {
+  @apply ring-2 ring-primary-500 ring-offset-2;
+}
