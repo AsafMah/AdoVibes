@@ -3,7 +3,7 @@ name: release
 on:
   push:
     tags:
-      - v*
+      - '*'
   workflow_dispatch:
 
 jobs:
@@ -39,8 +39,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bun run tauri
-          tagName: v__VERSION__
-          releaseName: AdoVibes v__VERSION__
+          tagName: ${{ github.ref_name }}
+          releaseName: AdoVibes ${{ github.ref_name }}
           releaseBody: |
             Desktop release for AdoVibes.
 
