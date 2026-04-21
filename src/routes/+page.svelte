@@ -23,6 +23,7 @@
 					await workItemsStore.fetchSprintItems(
 						app.organization,
 						app.project,
+						app.team,
 						app.selectedSprint.path
 					);
 				}
@@ -41,6 +42,7 @@
 			workItemsStore.fetchSprintItems(
 				app.organization,
 				app.project,
+				app.team,
 				app.selectedSprint!.path
 			);
 		}
@@ -66,6 +68,7 @@
 			await workItemsStore.fetchSprintItems(
 				app.organization,
 				app.project,
+				app.team,
 				app.selectedSprint.path
 			);
 		}

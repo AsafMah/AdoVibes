@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Tauri Dev",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run tauri dev"
+    },
+    {
+      "name": "Frontend Dev Server",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:1420",
+      "webRoot": "${workspaceFolder}/src"
+    }
+  ]
+}

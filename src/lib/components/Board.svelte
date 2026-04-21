@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { WorkItem, CreateWorkItemRequest, UpdateWorkItemRequest } from '$lib/stores/app.svelte';
 	import type { GroupedItem } from '$lib/stores/workitems.svelte';
 	import BoardColumn from './BoardColumn.svelte';
@@ -35,6 +36,19 @@
 
 	// Keyboard navigation
 	let focusedColumn = $state<Column>('new');
+
+	onMount(() => {
+		const handleCreateItem = () => {
+			showCreateDialog = true;
+			createParent = null;
+		};
+
+		window.addEventListener('create-item', handleCreateItem);
+
+		return () => {
+			window.removeEventListener('create-item', handleCreateItem);
+		};
+	});
 
 	function getAllItemsInColumn(column: Column): WorkItem[] {
 		switch (column) {
@@ -76,6 +90,8 @@
 						if (items.length > 0) {
 							selectedItem = items[0];
 							scrollToItem(items[0].id);
+						} else {
+							selectedItem = null;
 						}
 					}
 				}
@@ -87,6 +103,7 @@
 				if (nextCol) {
 					onMoveItem(selectedItem.id, selectedItem.workItemType, nextCol);
 					focusedColumn = nextCol;
+					selectedItem = { ...selectedItem, boardColumn: nextCol };
 				}
 				break;
 			}
@@ -192,7 +209,7 @@
 <div class="fixed bottom-0 left-0 right-0 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900 px-4 py-1.5 text-xs text-surface-400 dark:text-surface-500">
 	<span class="mr-4">↑↓ Navigate</span>
 	<span class="mr-4">←→ Switch columns</span>
-	<span class="mr-4"><kbd class="rounded border border-surface-300 dark:border-surface-600 bg-surface-100 dark:bg-surface-800 px-1">Shift+H/L</kbd> Move item</span>
+	<span class="mr-4"><kbd class="rounded border border-surface-300 dark:border-surface-600 bg-surface-100 dark:bg-surface-800 px-1">Ctrl+←/→</kbd> Move item</span>
 	<span class="mr-4"><kbd class="rounded border border-surface-300 dark:border-surface-600 bg-surface-100 dark:bg-surface-800 px-1">Enter</kbd> Open</span>
 	<span class="mr-4"><kbd class="rounded border border-surface-300 dark:border-surface-600 bg-surface-100 dark:bg-surface-800 px-1">N</kbd> New item</span>
 	<span class="mr-4"><kbd class="rounded border border-surface-300 dark:border-surface-600 bg-surface-100 dark:bg-surface-800 px-1">D</kbd> Mark done</span>

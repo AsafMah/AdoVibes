@@ -66,6 +66,20 @@ pub struct AdoRelation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AdoTeamFieldValue {
+    pub value: String,
+    pub include_children: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdoTeamFieldValuesResponse {
+    pub default_value: Option<String>,
+    pub values: Vec<AdoTeamFieldValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WiqlResponse {
     pub work_items: Option<Vec<AdoWorkItemRef>>,
     pub work_item_relations: Option<Vec<WiqlRelation>>,

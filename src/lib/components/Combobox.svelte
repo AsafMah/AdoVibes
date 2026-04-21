@@ -46,8 +46,8 @@
 		onSelect(opt.value);
 	}
 
-	async function doSearch(q: string) {
-		if (q.trim().length < minChars) {
+	async function doSearch(q: string, allowPrefetch = false) {
+		if (!allowPrefetch && q.trim().length < minChars) {
 			results = [];
 			return;
 		}
@@ -69,11 +69,14 @@
 	}
 
 	function handleFocus() {
-		if (query.trim().length >= minChars) {
-			isOpen = true;
-			if (results.length === 0) {
-				doSearch(query);
-			}
+		isOpen = true;
+		if (results.length === 0) {
+			doSearch(query, query.trim().length === 0);
+			return;
+		}
+
+		if (query.trim().length < minChars && query.trim().length > 0) {
+			results = [];
 		}
 	}
 
@@ -156,7 +159,7 @@
 				</li>
 			{/each}
 		</ul>
-	{:else if isOpen && query.trim().length >= minChars && !isSearching && results.length === 0}
+	{:else if isOpen && (query.trim().length >= minChars || query.trim().length === 0) && !isSearching && results.length === 0}
 		<div class="absolute z-50 mt-1 w-full rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-sm text-surface-400 shadow-lg">
 			No matches found
 		</div>

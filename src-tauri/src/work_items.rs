@@ -9,19 +9,46 @@ pub async fn get_sprint_work_items(
     client: State<'_, Mutex<AdoClient>>,
     organization: String,
     project: String,
+    team: String,
     iteration_path: String,
 ) -> Result<Vec<WorkItem>, String> {
     info!("Loading work items for sprint '{}'", iteration_path);
     let client = client.lock().await;
 
+    let team_area_paths = client
+        .get_team_area_paths(&organization, &project, &team)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let area_filter = if team_area_paths.is_empty() {
+        String::new()
+    } else {
+        let clauses = team_area_paths
+            .into_iter()
+            .map(|(path, include_children)| {
+                let escaped = path.replace('\'', "''");
+                if include_children {
+                    format!("[System.AreaPath] UNDER '{}'", escaped)
+                } else {
+                    format!("[System.AreaPath] = '{}'", escaped)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" OR ");
+
+        format!(" AND ({})", clauses)
+    };
+
     // Query PBIs, Bugs, and Tasks in the given sprint
     let wiql = format!(
         "SELECT [System.Id] FROM workitems \
          WHERE [System.IterationPath] = '{}' \
+         {} \
          AND [System.WorkItemType] IN ('Product Backlog Item', 'Bug', 'Task') \
          AND [System.State] <> 'Removed' \
          ORDER BY [Microsoft.VSTS.Common.BacklogPriority] ASC, [System.Id] ASC",
-        iteration_path.replace('\'', "''")
+        iteration_path.replace('\'', "''"),
+        area_filter
     );
 
     let ids = client

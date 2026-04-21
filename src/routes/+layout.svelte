@@ -87,7 +87,7 @@
 					<div class="space-y-0.5 px-2 text-xs text-surface-400 dark:text-surface-500">
 						<div><kbd class="font-mono">↑↓</kbd> Navigate</div>
 						<div><kbd class="font-mono">←→</kbd> Switch columns</div>
-						<div><kbd class="font-mono">Shift+H/L</kbd> Move item</div>
+						<div><kbd class="font-mono">Ctrl+←/→</kbd> Move item</div>
 						<div><kbd class="font-mono">Enter</kbd> Open item</div>
 						<div><kbd class="font-mono">N</kbd> New item</div>
 						<div><kbd class="font-mono">D</kbd> Mark done</div>

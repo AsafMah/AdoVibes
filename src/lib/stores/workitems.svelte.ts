@@ -26,20 +26,21 @@ export function getWorkItemsState() {
 		/** Group work items: PBIs/Bugs at top level, Tasks nested under their parent */
 		get groupedByColumn() {
 			const columns = {
-				new: groupItems(workItems.filter((wi) => wi.boardColumn === 'new')),
-				active: groupItems(workItems.filter((wi) => wi.boardColumn === 'active')),
-				done: groupItems(workItems.filter((wi) => wi.boardColumn === 'done'))
+				new: groupItemsForColumn(workItems, 'new'),
+				active: groupItemsForColumn(workItems, 'active'),
+				done: groupItemsForColumn(workItems, 'done')
 			};
 			return columns;
 		},
 
-		async fetchSprintItems(organization: string, project: string, iterationPath: string) {
+		async fetchSprintItems(organization: string, project: string, team: string, iterationPath: string) {
 			isLoading = true;
 			error = null;
 			try {
 				workItems = await invoke<WorkItem[]>('get_sprint_work_items', {
 					organization,
 					project,
+					team,
 					iterationPath
 				});
 			} catch (e) {
@@ -146,22 +147,49 @@ export interface GroupedItem {
 	children: WorkItem[];
 }
 
-function groupItems(items: WorkItem[]): GroupedItem[] {
-	const parentItems = items.filter(
-		(wi) => wi.workItemType === 'Product Backlog Item' || wi.workItemType === 'Bug' || wi.workItemType === 'Epic' || wi.workItemType === 'Feature'
-	);
-	const tasks = items.filter((wi) => wi.workItemType === 'Task');
-	const orphanTasks = tasks.filter((t) => !t.parentId || !items.some((p) => p.id === t.parentId));
+function isParentType(workItem: WorkItem) {
+	return workItem.workItemType === 'Product Backlog Item'
+		|| workItem.workItemType === 'Bug'
+		|| workItem.workItemType === 'Epic'
+		|| workItem.workItemType === 'Feature';
+}
 
-	const groups: GroupedItem[] = parentItems.map((parent) => ({
-		item: parent,
-		children: tasks.filter((t) => t.parentId === parent.id)
-	}));
+function groupItemsForColumn(allItems: WorkItem[], column: WorkItem['boardColumn']): GroupedItem[] {
+	const columnItems = allItems.filter((wi) => wi.boardColumn === column);
+	const allItemsById = new Map(allItems.map((wi) => [wi.id, wi]));
+	const groups = new Map<number, GroupedItem>();
+	const orderedGroups: GroupedItem[] = [];
 
-	// Add orphan tasks as standalone items
-	for (const task of orphanTasks) {
-		groups.push({ item: task, children: [] });
+	for (const item of columnItems) {
+		if (isParentType(item)) {
+			if (!groups.has(item.id)) {
+				const group = { item, children: [] };
+				groups.set(item.id, group);
+				orderedGroups.push(group);
+			}
+			continue;
+		}
+
+		if (item.workItemType !== 'Task' || !item.parentId) {
+			orderedGroups.push({ item, children: [] });
+			continue;
+		}
+
+		const parent = allItemsById.get(item.parentId);
+		if (!parent || !isParentType(parent)) {
+			orderedGroups.push({ item, children: [] });
+			continue;
+		}
+
+		let group = groups.get(parent.id);
+		if (!group) {
+			group = { item: parent, children: [] };
+			groups.set(parent.id, group);
+			orderedGroups.push(group);
+		}
+
+		group.children.push(item);
 	}
 
-	return groups;
+	return orderedGroups;
 }

@@ -5,6 +5,8 @@ use log::{info, warn};
 use reqwest::{Client, Response};
 use std::collections::HashMap;
 
+const SEARCH_PREFETCH_PAGE_SIZE: usize = 25;
+
 pub struct AdoClient {
     client: Client,
     auth: AuthMethod,
@@ -40,6 +42,14 @@ async fn check_response(resp: Response, context: &str) -> Result<Response> {
 }
 
 impl AdoClient {
+    fn normalize_iteration_path(project: &str, path: &str) -> String {
+        if path == project || path.starts_with(&format!("{}\\", project)) {
+            return path.to_string();
+        }
+
+        format!("{}\\{}", project, path)
+    }
+
     pub fn new() -> Self {
         Self {
             client: Client::new(),
@@ -114,6 +124,11 @@ impl AdoClient {
 
         let all = self.projects_cache.get(&key).unwrap();
         let q = query.to_lowercase();
+
+        if q.is_empty() {
+            return Ok(all.iter().take(SEARCH_PREFETCH_PAGE_SIZE).cloned().collect());
+        }
+
         Ok(all
             .iter()
             .filter(|p| p.name.to_lowercase().contains(&q))
@@ -160,10 +175,41 @@ impl AdoClient {
 
         let all = self.teams_cache.get(&key).unwrap();
         let q = query.to_lowercase();
+
+        if q.is_empty() {
+            return Ok(all.iter().take(SEARCH_PREFETCH_PAGE_SIZE).cloned().collect());
+        }
+
         Ok(all
             .iter()
             .filter(|t| t.name.to_lowercase().contains(&q))
             .cloned()
+            .collect())
+    }
+
+    pub async fn get_team_area_paths(
+        &self,
+        org: &str,
+        project: &str,
+        team: &str,
+    ) -> Result<Vec<(String, bool)>> {
+        let url = format!(
+            "{}/{}/{}/_apis/work/teamsettings/teamfieldvalues?api-version=7.1",
+            self.base_url(org),
+            project,
+            team
+        );
+
+        let raw = self.authed_get(&url)?.send().await?;
+        let resp: AdoTeamFieldValuesResponse = check_response(raw, "Failed to load team area paths")
+            .await?
+            .json()
+            .await?;
+
+        Ok(resp
+            .values
+            .into_iter()
+            .map(|value| (value.value, value.include_children))
             .collect())
     }
 
@@ -194,7 +240,7 @@ impl AdoClient {
             .map(|i| Sprint {
                 id: i.id,
                 name: i.name.clone(),
-                path: i.path,
+                path: Self::normalize_iteration_path(project, &i.path),
                 start_date: i.attributes.as_ref().and_then(|a| a.start_date.clone()),
                 finish_date: i.attributes.as_ref().and_then(|a| a.finish_date.clone()),
                 time_frame: i.attributes.as_ref().and_then(|a| a.time_frame.clone()),
@@ -224,7 +270,7 @@ impl AdoClient {
         Ok(resp.value.into_iter().next().map(|i| Sprint {
             id: i.id,
             name: i.name.clone(),
-            path: i.path,
+            path: Self::normalize_iteration_path(project, &i.path),
             start_date: i.attributes.as_ref().and_then(|a| a.start_date.clone()),
             finish_date: i.attributes.as_ref().and_then(|a| a.finish_date.clone()),
             time_frame: i.attributes.as_ref().and_then(|a| a.time_frame.clone()),

@@ -16,6 +16,16 @@ export function handleBoardKeydown(event: KeyboardEvent): BoardAction | null {
 		return null;
 	}
 
+	if ((event.ctrlKey || event.metaKey) && event.key === 'ArrowLeft') {
+		event.preventDefault();
+		return { type: 'move', direction: 'left' };
+	}
+
+	if ((event.ctrlKey || event.metaKey) && event.key === 'ArrowRight') {
+		event.preventDefault();
+		return { type: 'move', direction: 'right' };
+	}
+
 	switch (event.key) {
 		case 'ArrowUp':
 		case 'k':
@@ -32,17 +42,17 @@ export function handleBoardKeydown(event: KeyboardEvent): BoardAction | null {
 			event.preventDefault();
 			return { type: 'navigate', direction: 'right' };
 		case 'h':
-			if (event.shiftKey) {
-				event.preventDefault();
-				return { type: 'move', direction: 'left' };
+			if (event.ctrlKey || event.metaKey) {
+				return null;
 			}
-			return null;
+			event.preventDefault();
+			return { type: 'navigate', direction: 'left' };
 		case 'l':
-			if (event.shiftKey) {
-				event.preventDefault();
-				return { type: 'move', direction: 'right' };
+			if (event.ctrlKey || event.metaKey) {
+				return null;
 			}
-			return null;
+			event.preventDefault();
+			return { type: 'navigate', direction: 'right' };
 		case 'H':
 			event.preventDefault();
 			return { type: 'move', direction: 'left' };
