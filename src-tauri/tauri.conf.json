@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "adovibes",
-        "width": 800,
-        "height": 600
+        "title": "AdoVibes",
+        "width": 1400,
+        "height": 900
       }
     ],
     "security": {
