@@ -6,10 +6,10 @@
 		isBusy?: boolean;
 		isSelected?: boolean;
 		isDraggable?: boolean;
+		isDragging?: boolean;
 		onSelect?: () => void;
 		onOpen?: () => void;
-		onDragStart?: (event: DragEvent) => void;
-		onDragEnd?: (event: DragEvent) => void;
+		onPointerDown?: (event: PointerEvent) => void;
 	}
 
 	let {
@@ -17,10 +17,10 @@
 		isBusy = false,
 		isSelected = false,
 		isDraggable = false,
+		isDragging = false,
 		onSelect,
 		onOpen,
-		onDragStart,
-		onDragEnd
+		onPointerDown
 	}: Props = $props();
 
 	const typeColors: Record<string, string> = {
@@ -57,16 +57,11 @@
 		}
 	}
 
-	function handleDragStart(event: DragEvent) {
-		if (!isDraggable || isBusy) {
-			event.preventDefault();
+	function handlePointerDown(event: PointerEvent) {
+		if (!isDraggable || isBusy || event.button !== 0) {
 			return;
 		}
-		onDragStart?.(event);
-	}
-
-	function handleDragEnd(event: DragEvent) {
-		onDragEnd?.(event);
+		onPointerDown?.(event);
 	}
 </script>
 
@@ -74,18 +69,17 @@
 <div
 	class="card rounded-md border p-3 transition-all cursor-pointer
 		{isBusy ? 'opacity-70 cursor-wait' : ''}
+		{isDragging ? 'opacity-35' : ''}
 		{isDraggable && !isBusy ? 'cursor-grab active:cursor-grabbing' : ''}
 		{isSelected ? 'ring-2 ring-primary-500 border-primary-500 bg-surface-100 dark:bg-surface-800' : 'border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-900 hover:border-surface-400 dark:hover:border-surface-500'}
 		{item.workItemType === 'Task' ? 'ml-4 border-l-2' : ''}"
 	style="border-left-color: {item.workItemType === 'Task' ? '#eab308' : 'inherit'}"
 	tabindex={isBusy ? -1 : 0}
 	role="button"
-	draggable={isDraggable && !isBusy}
 	onclick={handleClick}
 	ondblclick={handleDblClick}
 	onkeydown={handleKeydown}
-	ondragstart={handleDragStart}
-	ondragend={handleDragEnd}
+	onpointerdown={handlePointerDown}
 	data-item-id={item.id}
 >
 	<div class="flex items-start gap-2">

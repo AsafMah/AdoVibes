@@ -6,30 +6,28 @@
 		parent: WorkItem;
 		children: WorkItem[];
 		movingItemId?: number | null;
+		draggingItemId?: number | null;
 		selectedItemId?: number | null;
 		isParentDraggable?: boolean;
 		onSelectItem?: (item: WorkItem) => void;
 		onOpenItem?: (item: WorkItem) => void;
 		onAddTask?: (parent: WorkItem) => void;
-		onParentDragStart?: (event: DragEvent, item: WorkItem) => void;
-		onParentDragEnd?: (event: DragEvent, item: WorkItem) => void;
-		onTaskDragStart?: (event: DragEvent, item: WorkItem) => void;
-		onTaskDragEnd?: (event: DragEvent, item: WorkItem) => void;
+		onParentPointerDown?: (event: PointerEvent, item: WorkItem) => void;
+		onTaskPointerDown?: (event: PointerEvent, item: WorkItem) => void;
 	}
 
 	let {
 		parent,
 		children,
 		movingItemId = null,
+		draggingItemId = null,
 		selectedItemId = null,
 		isParentDraggable = false,
 		onSelectItem,
 		onOpenItem,
 		onAddTask,
-		onParentDragStart,
-		onParentDragEnd,
-		onTaskDragStart,
-		onTaskDragEnd
+		onParentPointerDown,
+		onTaskPointerDown
 	}: Props = $props();
 
 	let expanded = $state(true);
@@ -42,12 +40,12 @@
 	<WorkItemCard
 		item={parent}
 		isBusy={movingItemId === parent.id}
+		isDragging={draggingItemId === parent.id}
 		isDraggable={isParentDraggable}
 		isSelected={selectedItemId === parent.id}
 		onSelect={() => onSelectItem?.(parent)}
 		onOpen={() => onOpenItem?.(parent)}
-		onDragStart={(event) => onParentDragStart?.(event, parent)}
-		onDragEnd={(event) => onParentDragEnd?.(event, parent)}
+		onPointerDown={(event) => onParentPointerDown?.(event, parent)}
 	/>
 
 	{#if children.length > 0}
@@ -68,12 +66,12 @@
 				<WorkItemCard
 					item={child}
 					isBusy={movingItemId === child.id}
+					isDragging={draggingItemId === child.id}
 					isDraggable={movingItemId === null}
 					isSelected={selectedItemId === child.id}
 					onSelect={() => onSelectItem?.(child)}
 					onOpen={() => onOpenItem?.(child)}
-					onDragStart={(event) => onTaskDragStart?.(event, child)}
-					onDragEnd={(event) => onTaskDragEnd?.(event, child)}
+					onPointerDown={(event) => onTaskPointerDown?.(event, child)}
 				/>
 			{/each}
 		</div>

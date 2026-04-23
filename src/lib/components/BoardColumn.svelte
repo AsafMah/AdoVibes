@@ -12,14 +12,30 @@
 		items: WorkItem[];
 		dragEnabled?: boolean;
 		movingItemId?: number | null;
+		draggingItemId?: number | null;
+		dropTargetColumn?: 'new' | 'active' | 'done' | null;
 		selectedItemId?: number | null;
 		onSelectItem?: (item: WorkItem) => void;
 		onOpenItem?: (item: WorkItem) => void;
 		onAddTask?: (parent: WorkItem) => void;
-		onDropItem?: (itemId: number, targetColumn: string) => void;
+		onItemPointerDown?: (event: PointerEvent, item: WorkItem) => void;
 	}
 
-	let { title, column, groups, items, dragEnabled = false, movingItemId = null, selectedItemId = null, onSelectItem, onOpenItem, onAddTask, onDropItem }: Props = $props();
+	let {
+		title,
+		column,
+		groups,
+		items,
+		dragEnabled = false,
+		movingItemId = null,
+		draggingItemId = null,
+		dropTargetColumn = null,
+		selectedItemId = null,
+		onSelectItem,
+		onOpenItem,
+		onAddTask,
+		onItemPointerDown
+	}: Props = $props();
 
 	const columnColors: Record<string, string> = {
 		new: 'border-t-blue-500',
@@ -34,67 +50,13 @@
 	};
 
 	const flipDurationMs = 150;
-	const BOARD_ITEM_DRAG_MIME = 'application/x-adovibes-work-item';
-	const BOARD_ITEM_TEXT_PREFIX = 'adovibes-work-item:';
-
-	function handleItemDragStart(event: DragEvent, item: WorkItem) {
-		const payload = JSON.stringify({
-			id: item.id,
-			workItemType: item.workItemType,
-			sourceColumn: item.boardColumn
-		});
-		event.dataTransfer?.setData(BOARD_ITEM_DRAG_MIME, payload);
-		event.dataTransfer?.setData('text/plain', `${BOARD_ITEM_TEXT_PREFIX}${payload}`);
-		if (event.dataTransfer) {
-			event.dataTransfer.effectAllowed = 'move';
-		}
-	}
-
-	function handleItemDragOver(event: DragEvent) {
-		if (!dragEnabled || movingItemId !== null) {
-			return;
-		}
-
-		const dragTypes = event.dataTransfer?.types ?? [];
-		const payload =
-			dragTypes.includes(BOARD_ITEM_DRAG_MIME) ||
-			dragTypes.includes('text/plain') ||
-			dragTypes.includes('Text');
-		if (!payload) {
-			return;
-		}
-
-		event.preventDefault();
-		if (event.dataTransfer) {
-			event.dataTransfer.dropEffect = 'move';
-		}
-	}
-
-	function handleItemDrop(event: DragEvent) {
-		if (!dragEnabled || movingItemId !== null) {
-			return;
-		}
-
-		const raw =
-			event.dataTransfer?.getData(BOARD_ITEM_DRAG_MIME) ||
-			event.dataTransfer?.getData('text/plain') ||
-			event.dataTransfer?.getData('Text');
-		if (!raw) {
-			return;
-		}
-
-		event.preventDefault();
-		const serialized = raw.startsWith(BOARD_ITEM_TEXT_PREFIX)
-			? raw.slice(BOARD_ITEM_TEXT_PREFIX.length)
-			: raw;
-		const payload = JSON.parse(serialized) as { id: number; sourceColumn: string };
-		if (payload.sourceColumn !== column) {
-			onDropItem?.(payload.id, column);
-		}
-	}
 </script>
 
-<div class="flex h-full min-w-[320px] max-w-[400px] flex-1 flex-col rounded-lg border-t-4 {columnColors[column]} bg-surface-50 dark:bg-surface-900 shadow-sm">
+<div
+	class="flex h-full min-w-[320px] max-w-[400px] flex-1 flex-col rounded-lg border-t-4 {columnColors[column]} bg-surface-50 dark:bg-surface-900 shadow-sm transition-all
+		{dropTargetColumn === column ? 'ring-2 ring-primary-400 ring-offset-2 dark:ring-offset-surface-950 scale-[1.01]' : ''}"
+	data-board-column={column}
+>
 	<div class="flex items-center justify-between px-4 py-3 {columnBg[column]}">
 		<h2 class="text-sm font-semibold uppercase tracking-wide text-surface-700 dark:text-surface-200">{title}</h2>
 		<span class="rounded-full bg-surface-200 dark:bg-surface-700 px-2 py-0.5 text-xs font-medium text-surface-600 dark:text-surface-300">
@@ -103,48 +65,46 @@
 	</div>
 
 	{#if dragEnabled}
-		<div
-			class="board-column flex-1 overflow-y-auto p-2"
-			role="presentation"
-			ondragover={handleItemDragOver}
-			ondrop={handleItemDrop}
-		>
+		<div class="board-column flex-1 overflow-y-auto p-2" role="presentation">
 			{#each groups as group (group.item.id)}
-				<div class="mb-2" animate:flip={{ duration: flipDurationMs }}>
+				<div class="mb-2" role="presentation" animate:flip={{ duration: flipDurationMs }}>
 					{#if group.children.length > 0}
 						<PbiGroup
 							parent={group.item}
 							children={group.children}
 							{movingItemId}
+							{draggingItemId}
 							{selectedItemId}
 							isParentDraggable={movingItemId === null}
 							{onSelectItem}
 							{onOpenItem}
 							{onAddTask}
-							onParentDragStart={handleItemDragStart}
-							onTaskDragStart={handleItemDragStart}
+							onParentPointerDown={onItemPointerDown}
+							onTaskPointerDown={onItemPointerDown}
 						/>
 					{:else if group.item.workItemType === 'Task'}
 						<WorkItemCard
 							item={group.item}
 							isBusy={movingItemId === group.item.id}
+							isDragging={draggingItemId === group.item.id}
 							isDraggable={movingItemId === null}
 							isSelected={selectedItemId === group.item.id}
 							onSelect={() => onSelectItem?.(group.item)}
 							onOpen={() => onOpenItem?.(group.item)}
-							onDragStart={(event) => handleItemDragStart(event, group.item)}
+							onPointerDown={(event) => onItemPointerDown?.(event, group.item)}
 						/>
 					{:else}
 						<PbiGroup
 							parent={group.item}
 							children={[]}
 							{movingItemId}
+							{draggingItemId}
 							{selectedItemId}
 							isParentDraggable={movingItemId === null}
 							{onSelectItem}
 							{onOpenItem}
 							{onAddTask}
-							onParentDragStart={handleItemDragStart}
+							onParentPointerDown={onItemPointerDown}
 						/>
 					{/if}
 				</div>

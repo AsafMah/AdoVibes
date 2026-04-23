@@ -37,9 +37,38 @@
 	let detailItem = $state<WorkItem | null>(null);
 	let showCreateDialog = $state(false);
 	let createParent = $state<WorkItem | null>(null);
+	let dragState = $state<{
+		item: WorkItem;
+		pointerId: number;
+		startX: number;
+		startY: number;
+		currentX: number;
+		currentY: number;
+		offsetX: number;
+		offsetY: number;
+		width: number;
+		dragging: boolean;
+		originColumn: Column;
+	} | null>(null);
+	let hoveredColumn = $state<Column | null>(null);
 
 	// Keyboard navigation
 	let focusedColumn = $state<Column>('new');
+	const DRAG_THRESHOLD_PX = 6;
+	const dragTypeColors: Record<string, string> = {
+		'Product Backlog Item': 'bg-blue-500',
+		'Bug': 'bg-red-500',
+		'Task': 'bg-yellow-500',
+		'Epic': 'bg-purple-500',
+		'Feature': 'bg-green-500'
+	};
+	const dragTypeLabels: Record<string, string> = {
+		'Product Backlog Item': 'PBI',
+		'Bug': 'Bug',
+		'Task': 'Task',
+		'Epic': 'Epic',
+		'Feature': 'Feature'
+	};
 
 	onMount(() => {
 		const handleCreateItem = () => {
@@ -51,6 +80,7 @@
 
 		return () => {
 			window.removeEventListener('create-item', handleCreateItem);
+			stopPointerDrag();
 		};
 	});
 
@@ -149,6 +179,37 @@
 		showCreateDialog = true;
 	}
 
+	function handleItemPointerDown(event: PointerEvent, item: WorkItem) {
+		if (isMovePending || event.button !== 0) {
+			return;
+		}
+
+		const target = event.currentTarget as HTMLElement | null;
+		if (!target) {
+			return;
+		}
+
+		const rect = target.getBoundingClientRect();
+		selectedItem = item;
+		focusedColumn = item.boardColumn as Column;
+		dragState = {
+			item,
+			pointerId: event.pointerId,
+			startX: event.clientX,
+			startY: event.clientY,
+			currentX: event.clientX,
+			currentY: event.clientY,
+			offsetX: event.clientX - rect.left,
+			offsetY: event.clientY - rect.top,
+			width: rect.width,
+			dragging: false,
+			originColumn: item.boardColumn as Column
+		};
+		window.addEventListener('pointermove', handleGlobalPointerMove, true);
+		window.addEventListener('pointerup', handleGlobalPointerUp, true);
+		window.addEventListener('pointercancel', handleGlobalPointerCancel, true);
+	}
+
 	function handleDropItem(itemId: number, targetColumn: string) {
 		if (isMovePending) {
 			return;
@@ -181,6 +242,68 @@
 		onUpdateItem(request);
 		detailItem = null;
 	}
+
+	function handleGlobalPointerMove(event: PointerEvent) {
+		if (!dragState || event.pointerId !== dragState.pointerId) {
+			return;
+		}
+
+		const movedFarEnough =
+			Math.abs(event.clientX - dragState.startX) >= DRAG_THRESHOLD_PX ||
+			Math.abs(event.clientY - dragState.startY) >= DRAG_THRESHOLD_PX;
+		const dragging = dragState.dragging || movedFarEnough;
+
+		dragState = {
+			...dragState,
+			currentX: event.clientX,
+			currentY: event.clientY,
+			dragging
+		};
+
+		if (dragging) {
+			event.preventDefault();
+			document.body.style.userSelect = 'none';
+			document.body.style.cursor = 'grabbing';
+			hoveredColumn = getColumnFromPoint(event.clientX, event.clientY);
+		}
+	}
+
+	function handleGlobalPointerUp(event: PointerEvent) {
+		if (!dragState || event.pointerId !== dragState.pointerId) {
+			return;
+		}
+
+		const activeDrag = dragState;
+		const targetColumn = hoveredColumn;
+		stopPointerDrag();
+		if (activeDrag.dragging && targetColumn && targetColumn !== activeDrag.originColumn) {
+			handleDropItem(activeDrag.item.id, targetColumn);
+		}
+	}
+
+	function handleGlobalPointerCancel(event: PointerEvent) {
+		if (!dragState || event.pointerId !== dragState.pointerId) {
+			return;
+		}
+
+		stopPointerDrag();
+	}
+
+	function stopPointerDrag() {
+		window.removeEventListener('pointermove', handleGlobalPointerMove, true);
+		window.removeEventListener('pointerup', handleGlobalPointerUp, true);
+		window.removeEventListener('pointercancel', handleGlobalPointerCancel, true);
+		document.body.style.userSelect = '';
+		document.body.style.cursor = '';
+		dragState = null;
+		hoveredColumn = null;
+	}
+
+	function getColumnFromPoint(clientX: number, clientY: number): Column | null {
+		const element = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-board-column]');
+		const column = element?.dataset.boardColumn;
+		return column === 'new' || column === 'active' || column === 'done' ? column : null;
+	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -191,11 +314,13 @@
 		column="new"
 		groups={groupedByColumn.new}
 		items={newItems}
+		draggingItemId={dragState?.dragging ? dragState.item.id : null}
+		dropTargetColumn={dragState?.dragging ? hoveredColumn : null}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
 		onAddTask={handleAddTask}
-		onDropItem={handleDropItem}
+		onItemPointerDown={handleItemPointerDown}
 		movingItemId={movingItemId}
 		dragEnabled={!isMovePending}
 	/>
@@ -204,11 +329,13 @@
 		column="active"
 		groups={groupedByColumn.active}
 		items={activeItems}
+		draggingItemId={dragState?.dragging ? dragState.item.id : null}
+		dropTargetColumn={dragState?.dragging ? hoveredColumn : null}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
 		onAddTask={handleAddTask}
-		onDropItem={handleDropItem}
+		onItemPointerDown={handleItemPointerDown}
 		movingItemId={movingItemId}
 		dragEnabled={!isMovePending}
 	/>
@@ -217,15 +344,41 @@
 		column="done"
 		groups={groupedByColumn.done}
 		items={doneItems}
+		draggingItemId={dragState?.dragging ? dragState.item.id : null}
+		dropTargetColumn={dragState?.dragging ? hoveredColumn : null}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
 		onAddTask={handleAddTask}
-		onDropItem={handleDropItem}
+		onItemPointerDown={handleItemPointerDown}
 		movingItemId={movingItemId}
 		dragEnabled={!isMovePending}
 	/>
 </div>
+
+{#if dragState?.dragging}
+	<div
+		class="pointer-events-none fixed z-50"
+		style={`left: ${dragState.currentX - dragState.offsetX}px; top: ${dragState.currentY - dragState.offsetY}px; width: ${dragState.width}px;`}
+	>
+		<div class="rounded-md border border-primary-300 bg-white/95 p-3 shadow-2xl dark:border-primary-700 dark:bg-surface-900/95">
+			<div class="flex items-start gap-2">
+				<span class="mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full {dragTypeColors[dragState.item.workItemType] || 'bg-gray-500'}"></span>
+				<div class="min-w-0">
+					<div class="flex items-center gap-1.5">
+						<span class="text-xs font-medium text-surface-500 dark:text-surface-400">
+							{dragTypeLabels[dragState.item.workItemType] || dragState.item.workItemType}
+						</span>
+						<span class="text-xs text-surface-400 dark:text-surface-500">#{dragState.item.id}</span>
+					</div>
+					<p class="mt-0.5 line-clamp-2 text-sm font-medium text-surface-800 dark:text-surface-100">
+						{dragState.item.title}
+					</p>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
 
 {#if isMovePending}
 	<div class="fixed right-4 bottom-12 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-700 shadow-sm dark:border-primary-900/40 dark:bg-primary-950/60 dark:text-primary-300">
