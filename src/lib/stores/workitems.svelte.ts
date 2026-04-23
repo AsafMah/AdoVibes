@@ -134,8 +134,38 @@ export function getWorkItemsState() {
 				return null;
 			}
 
+			const targetBoardColumn = targetColumn as WorkItem['boardColumn'];
+			const childTaskIds =
+				workItemType === 'Product Backlog Item' || workItemType === 'Bug'
+					? workItems
+						.filter(
+							(item) =>
+								item.parentId === id &&
+								item.workItemType === 'Task' &&
+								item.boardColumn !== targetBoardColumn
+						)
+						.map((item) => item.id)
+					: [];
+			const parentId = workItemType === 'Task' ? previousItem.parentId : undefined;
+			const parentTargetColumn =
+				workItemType === 'Task' && parentId
+					? getOptimisticParentColumn(parentId, id, targetBoardColumn)
+					: null;
+			const snapshot = snapshotItems([
+				id,
+				...childTaskIds,
+				...(parentId && parentTargetColumn ? [parentId] : [])
+			]);
+
 			error = null;
 			movingItemId = id;
+			updateItemLocally(id, (item) => applyOptimisticColumn(item, targetBoardColumn));
+			for (const childTaskId of childTaskIds) {
+				updateItemLocally(childTaskId, (item) => applyOptimisticColumn(item, targetBoardColumn));
+			}
+			if (parentId && parentTargetColumn) {
+				updateItemLocally(parentId, (item) => applyOptimisticColumn(item, parentTargetColumn));
+			}
 
 			try {
 				const updated = await moveWorkItemInBrowser(
@@ -148,7 +178,7 @@ export function getWorkItemsState() {
 				replaceItem(updated);
 
 				if (workItemType === 'Product Backlog Item' || workItemType === 'Bug') {
-					await syncLoadedChildTasksToColumn(organization, project, updated.id, targetColumn as WorkItem['boardColumn']);
+					await syncLoadedChildTasksToColumn(organization, project, updated.id, targetBoardColumn);
 				}
 
 				if (workItemType === 'Task' && updated.parentId) {
@@ -156,6 +186,7 @@ export function getWorkItemsState() {
 				}
 				return updated;
 			} catch (e) {
+				restoreSnapshot(snapshot);
 				error = `Failed to move item: ${e}`;
 				return null;
 			} finally {
@@ -204,6 +235,60 @@ function replaceItem(updated: WorkItem) {
 	if (idx >= 0) {
 		workItems = [...workItems.slice(0, idx), updated, ...workItems.slice(idx + 1)];
 	}
+}
+
+function updateItemLocally(id: number, updater: (item: WorkItem) => WorkItem) {
+	const idx = workItems.findIndex((wi) => wi.id === id);
+	if (idx < 0) {
+		return;
+	}
+
+	workItems = [...workItems.slice(0, idx), updater(workItems[idx]), ...workItems.slice(idx + 1)];
+}
+
+function applyOptimisticColumn(item: WorkItem, targetColumn: WorkItem['boardColumn']) {
+	return {
+		...item,
+		boardColumn: targetColumn,
+		state: columnToAdoState(item.workItemType, targetColumn)
+	};
+}
+
+function snapshotItems(ids: number[]) {
+	return new Map(
+		ids
+			.map((id) => workItems.find((item) => item.id === id))
+			.filter((item): item is WorkItem => Boolean(item))
+			.map((item) => [item.id, item])
+	);
+}
+
+function restoreSnapshot(snapshot: Map<number, WorkItem>) {
+	if (snapshot.size === 0) {
+		return;
+	}
+
+	workItems = workItems.map((item) => snapshot.get(item.id) ?? item);
+}
+
+function getOptimisticParentColumn(parentId: number, movingTaskId: number, targetColumn: WorkItem['boardColumn']) {
+	const siblingTasks = workItems.filter(
+		(item) => item.parentId === parentId && item.workItemType === 'Task'
+	);
+	if (siblingTasks.length === 0) {
+		return null;
+	}
+
+	const projectedColumns = siblingTasks.map((item) =>
+		item.id === movingTaskId ? targetColumn : item.boardColumn
+	);
+	if (projectedColumns.every((column) => column === 'done')) {
+		return 'done';
+	}
+	if (projectedColumns.some((column) => column !== 'new')) {
+		return 'active';
+	}
+	return 'new';
 }
 
 interface AdoRelation {
