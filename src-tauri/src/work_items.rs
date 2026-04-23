@@ -198,9 +198,9 @@ pub async fn mark_item_done_cascade(
     Ok(updated)
 }
 
-/// Check if all sibling tasks of a task are done, and if so, mark the parent PBI as done
+/// Sync a parent item with the aggregate state of its child tasks.
 #[tauri::command]
-pub async fn check_and_complete_parent(
+pub async fn sync_parent_state(
     client: State<'_, Mutex<AdoClient>>,
     organization: String,
     project: String,
@@ -222,30 +222,41 @@ pub async fn check_and_complete_parent(
         .await
         .map_err(|e| e.to_string())?;
 
-    let all_done = children.iter().all(|c| c.board_column == "done");
+    let parent = client
+        .get_work_item(&organization, &project, parent_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    if all_done {
-        let req = UpdateWorkItemRequest {
-            id: parent_id,
-            state: Some("Done".to_string()),
-            assigned_to: None,
-            title: None,
-            description: None,
-            priority: None,
-            story_points: None,
-            remaining_work: None,
-            tags: None,
-        };
-
-        let updated = client
-            .update_work_item(&organization, &project, &req)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        Ok(Some(updated))
+    let target_column = if children.iter().all(|c| c.board_column == "done") {
+        "done"
+    } else if children.iter().any(|c| c.board_column != "new") {
+        "active"
     } else {
-        Ok(None)
+        "new"
+    };
+
+    if parent.board_column == target_column {
+        return Ok(None);
     }
+
+    let req = UpdateWorkItemRequest {
+        id: parent_id,
+        state: Some(column_to_ado_state(&parent.work_item_type, target_column)),
+        assigned_to: None,
+        title: None,
+        description: None,
+        priority: None,
+        story_points: None,
+        remaining_work: None,
+        tags: None,
+    };
+
+    let updated = client
+        .update_work_item(&organization, &project, &req)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(Some(updated))
 }
 
 #[tauri::command]

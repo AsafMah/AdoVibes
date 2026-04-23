@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getAppState } from '$lib/stores/app.svelte';
-	import { getWorkItemsState } from '$lib/stores/workitems.svelte';
+	import {
+		getWorkItemsState,
+		type BoardGrouping,
+		type BoardSort,
+		type BoardViewData
+	} from '$lib/stores/workitems.svelte';
 	import ProjectSelector from '$lib/components/ProjectSelector.svelte';
 	import Board from '$lib/components/Board.svelte';
 	import type { CreateWorkItemRequest, UpdateWorkItemRequest } from '$lib/stores/app.svelte';
@@ -12,6 +17,35 @@
 	let authChoice = $state<'azcli' | 'pat' | null>(null);
 	let patInput = $state('');
 	let patOrgInput = $state('');
+	let searchQuery = $state('');
+	let typeFilter = $state('all');
+	let assigneeFilter = $state('all');
+	let mineOnly = $state(false);
+	let sortBy = $state<BoardSort>('backlog');
+	let groupBy = $state<BoardGrouping>('flat');
+
+	const boardView = $derived.by<BoardViewData>(() =>
+		workItemsStore.getBoardData({
+			search: searchQuery,
+			type: typeFilter,
+			assignee: assigneeFilter,
+			mineOnly,
+			currentUser: app.currentUser?.displayName ?? null,
+			sortBy,
+			groupBy
+		})
+	);
+
+	const assignees = $derived(workItemsStore.assignees);
+
+	function clearBoardControls() {
+		searchQuery = '';
+		typeFilter = 'all';
+		assigneeFilter = 'all';
+		mineOnly = false;
+		sortBy = 'backlog';
+		groupBy = 'flat';
+	}
 
 	onMount(async () => {
 		if (app.isSetupComplete) {
@@ -247,16 +281,114 @@
 			</div>
 		</div>
 	{:else if app.selectedSprint}
-		<Board
-			groupedByColumn={workItemsStore.groupedByColumn}
-			newItems={workItemsStore.newItems}
-			activeItems={workItemsStore.activeItems}
-			doneItems={workItemsStore.doneItems}
-			iterationPath={app.selectedSprint.path}
-			onMoveItem={handleMoveItem}
-			onCreateItem={handleCreateItem}
-			onUpdateItem={handleUpdateItem}
-		/>
+		<div class="flex h-full flex-col">
+			<div class="border-b border-surface-200 bg-surface-50/90 px-4 py-3 dark:border-surface-800 dark:bg-surface-950/90">
+				<div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+					<div>
+						<h2 class="text-sm font-semibold uppercase tracking-wide text-surface-600 dark:text-surface-300">Board controls</h2>
+						<p class="text-xs text-surface-500 dark:text-surface-400">
+							Showing {boardView.allItems.length} of {workItemsStore.workItems.length} work items for {app.selectedSprint.name}.
+						</p>
+					</div>
+					<button
+						class="rounded-lg border border-surface-300 px-3 py-2 text-sm text-surface-700 transition-colors hover:border-surface-400 hover:bg-surface-100 dark:border-surface-700 dark:text-surface-200 dark:hover:border-surface-600 dark:hover:bg-surface-900"
+						onclick={clearBoardControls}
+					>
+						Reset view
+					</button>
+				</div>
+
+				<div class="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+					<label class="flex flex-col gap-1 text-sm text-surface-600 dark:text-surface-300 xl:col-span-2">
+						<span class="text-xs font-medium uppercase tracking-wide">Search</span>
+						<input
+							type="text"
+							class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm text-surface-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
+							placeholder="Title, ID, assignee, tags"
+							bind:value={searchQuery}
+						/>
+					</label>
+
+					<label class="flex flex-col gap-1 text-sm text-surface-600 dark:text-surface-300">
+						<span class="text-xs font-medium uppercase tracking-wide">Type</span>
+						<select
+							class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm text-surface-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
+							bind:value={typeFilter}
+						>
+							<option value="all">All types</option>
+							<option value="Product Backlog Item">PBIs</option>
+							<option value="Bug">Bugs</option>
+							<option value="Task">Tasks</option>
+						</select>
+					</label>
+
+					<label class="flex flex-col gap-1 text-sm text-surface-600 dark:text-surface-300">
+						<span class="text-xs font-medium uppercase tracking-wide">Assignee</span>
+						<select
+							class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm text-surface-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
+							bind:value={assigneeFilter}
+						>
+							<option value="all">Everyone</option>
+							<option value="Unassigned">Unassigned</option>
+							{#each assignees as assignee}
+								<option value={assignee}>{assignee}</option>
+							{/each}
+						</select>
+					</label>
+
+					<label class="flex flex-col gap-1 text-sm text-surface-600 dark:text-surface-300">
+						<span class="text-xs font-medium uppercase tracking-wide">Sort</span>
+						<select
+							class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm text-surface-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
+							bind:value={sortBy}
+						>
+							<option value="backlog">Backlog order</option>
+							<option value="priority">Priority</option>
+							<option value="storyPoints">Story points</option>
+							<option value="remainingWork">Remaining work</option>
+							<option value="title">Title</option>
+							<option value="id">Work item ID</option>
+						</select>
+					</label>
+
+					<label class="flex flex-col gap-1 text-sm text-surface-600 dark:text-surface-300">
+						<span class="text-xs font-medium uppercase tracking-wide">Grouping</span>
+						<select
+							class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm text-surface-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
+							bind:value={groupBy}
+						>
+							<option value="hierarchy">Parent and subtasks</option>
+							<option value="flat">Flat list</option>
+						</select>
+					</label>
+
+					<label class="flex items-center gap-2 rounded-lg border border-surface-300 px-3 py-2 text-sm text-surface-700 dark:border-surface-700 dark:text-surface-200">
+						<input type="checkbox" class="h-4 w-4" bind:checked={mineOnly} />
+						<span>Only my items</span>
+					</label>
+				</div>
+
+				{#if groupBy === 'hierarchy'}
+					<p class="mt-2 text-xs text-surface-500 dark:text-surface-400">
+						Hierarchy grouping keeps parent and subtask cards together. Switch to Flat list to drag individual tasks between columns.
+					</p>
+				{/if}
+			</div>
+
+			<div class="min-h-0 flex-1">
+				<Board
+					groupedByColumn={boardView.groupedByColumn}
+					newItems={boardView.newItems}
+					activeItems={boardView.activeItems}
+					doneItems={boardView.doneItems}
+					groupMode={groupBy}
+					iterationPath={app.selectedSprint.path}
+					onMoveItem={handleMoveItem}
+					onCreateItem={handleCreateItem}
+					onUpdateItem={handleUpdateItem}
+				/>
+			</div>
+		</div>
 	{:else}
 		<div class="flex h-full items-center justify-center">
 			<p class="text-sm text-surface-500 dark:text-surface-400">No sprint selected. Choose a sprint from the sidebar.</p>

@@ -42,7 +42,7 @@ pub fn run() {
             work_items::update_work_item,
             work_items::move_work_item,
             work_items::mark_item_done_cascade,
-            work_items::check_and_complete_parent,
+            work_items::sync_parent_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -7,11 +7,36 @@ let workItems = $state<WorkItem[]>([]);
 let isLoading = $state(false);
 let error = $state<string | null>(null);
 
+export type BoardSort = 'backlog' | 'title' | 'priority' | 'storyPoints' | 'remainingWork' | 'id';
+export type BoardGrouping = 'hierarchy' | 'flat';
+
+export interface BoardViewOptions {
+	search: string;
+	type: string;
+	assignee: string;
+	mineOnly: boolean;
+	currentUser?: string | null;
+	sortBy: BoardSort;
+	groupBy: BoardGrouping;
+}
+
+export interface BoardViewData {
+	allItems: WorkItem[];
+	newItems: WorkItem[];
+	activeItems: WorkItem[];
+	doneItems: WorkItem[];
+	groupedByColumn: { new: GroupedItem[]; active: GroupedItem[]; done: GroupedItem[] };
+}
+
 export function getWorkItemsState() {
 	return {
 		get workItems() { return workItems; },
 		get isLoading() { return isLoading; },
 		get error() { return error; },
+		get assignees() {
+			return Array.from(new Set(workItems.map((wi) => wi.assignedTo?.trim()).filter(Boolean) as string[]))
+				.sort((left, right) => left.localeCompare(right));
+		},
 
 		get newItems() {
 			return workItems.filter((wi) => wi.boardColumn === 'new');
@@ -26,11 +51,26 @@ export function getWorkItemsState() {
 		/** Group work items: PBIs/Bugs at top level, Tasks nested under their parent */
 		get groupedByColumn() {
 			const columns = {
-				new: groupItemsForColumn(workItems, 'new'),
-				active: groupItemsForColumn(workItems, 'active'),
-				done: groupItemsForColumn(workItems, 'done')
+				new: groupItemsForColumn(workItems, 'new', 'hierarchy', 'backlog'),
+				active: groupItemsForColumn(workItems, 'active', 'hierarchy', 'backlog'),
+				done: groupItemsForColumn(workItems, 'done', 'hierarchy', 'backlog')
 			};
 			return columns;
+		},
+
+		getBoardData(view: BoardViewOptions): BoardViewData {
+			const filtered = sortWorkItems(filterWorkItems(workItems, view), view.sortBy);
+			return {
+				allItems: filtered,
+				newItems: filtered.filter((wi) => wi.boardColumn === 'new'),
+				activeItems: filtered.filter((wi) => wi.boardColumn === 'active'),
+				doneItems: filtered.filter((wi) => wi.boardColumn === 'done'),
+				groupedByColumn: {
+					new: groupItemsForColumn(filtered, 'new', view.groupBy, view.sortBy),
+					active: groupItemsForColumn(filtered, 'active', view.groupBy, view.sortBy),
+					done: groupItemsForColumn(filtered, 'done', view.groupBy, view.sortBy)
+				}
+			};
 		},
 
 		async fetchSprintItems(organization: string, project: string, team: string, iterationPath: string) {
@@ -80,18 +120,15 @@ export function getWorkItemsState() {
 					}
 				}
 
-				// If moving a task to done, check if parent should also be done
-				if (targetColumn === 'done' && workItemType === 'Task') {
-					const item = workItems.find((wi) => wi.id === id);
-					if (item?.parentId) {
-						const parentUpdated = await invoke<WorkItem | null>('check_and_complete_parent', {
-							organization,
-							project,
-							parentId: item.parentId
-						});
-						if (parentUpdated) {
-							replaceItem(parentUpdated);
-						}
+				if (workItemType === 'Task' && updated.parentId) {
+					const parentUpdated = await invoke<WorkItem | null>('sync_parent_state', {
+						organization,
+						project,
+						parentId: updated.parentId
+					});
+
+					if (parentUpdated) {
+						replaceItem(parentUpdated);
 					}
 				}
 			} catch (e) {
@@ -142,6 +179,72 @@ function replaceItem(updated: WorkItem) {
 	}
 }
 
+function filterWorkItems(items: WorkItem[], view: BoardViewOptions) {
+	const search = view.search.trim().toLowerCase();
+	const currentUser = view.currentUser?.trim().toLowerCase();
+
+	return items.filter((item) => {
+		if (search) {
+			const haystack = [
+				item.title,
+				String(item.id),
+				item.assignedTo,
+				item.workItemType,
+				item.tags
+			].filter(Boolean).join(' ').toLowerCase();
+
+			if (!haystack.includes(search)) {
+				return false;
+			}
+		}
+
+		if (view.type !== 'all' && item.workItemType !== view.type) {
+			return false;
+		}
+
+		if (view.assignee !== 'all' && (item.assignedTo ?? 'Unassigned') !== view.assignee) {
+			return false;
+		}
+
+		if (view.mineOnly) {
+			if (!currentUser || item.assignedTo?.trim().toLowerCase() !== currentUser) {
+				return false;
+			}
+		}
+
+		return true;
+	});
+}
+
+function sortWorkItems(items: WorkItem[], sortBy: BoardSort) {
+	return [...items].sort((left, right) => compareWorkItems(left, right, sortBy));
+}
+
+function compareWorkItems(left: WorkItem, right: WorkItem, sortBy: BoardSort) {
+	switch (sortBy) {
+		case 'title':
+			return left.title.localeCompare(right.title) || left.id - right.id;
+		case 'priority':
+			return compareNullableNumber(left.priority, right.priority) || left.id - right.id;
+		case 'storyPoints':
+			return compareNullableNumber(left.storyPoints, right.storyPoints) || left.id - right.id;
+		case 'remainingWork':
+			return compareNullableNumber(left.remainingWork, right.remainingWork) || left.id - right.id;
+		case 'id':
+			return left.id - right.id;
+		case 'backlog':
+		default:
+			return compareNullableNumber(left.priority, right.priority) || left.id - right.id;
+	}
+}
+
+function compareNullableNumber(left?: number, right?: number) {
+	if (left == null && right == null) return 0;
+	if (left == null) return 1;
+	if (right == null) return -1;
+	return left - right;
+}
+
 export interface GroupedItem {
 	item: WorkItem;
 	children: WorkItem[];
@@ -154,8 +257,18 @@ function isParentType(workItem: WorkItem) {
 		|| workItem.workItemType === 'Feature';
 }
 
-function groupItemsForColumn(allItems: WorkItem[], column: WorkItem['boardColumn']): GroupedItem[] {
-	const columnItems = allItems.filter((wi) => wi.boardColumn === column);
+function groupItemsForColumn(
+	allItems: WorkItem[],
+	column: WorkItem['boardColumn'],
+	groupBy: BoardGrouping,
+	sortBy: BoardSort
+): GroupedItem[] {
+	const columnItems = sortWorkItems(allItems.filter((wi) => wi.boardColumn === column), sortBy);
+
+	if (groupBy === 'flat') {
+		return columnItems.map((item) => ({ item, children: [] }));
+	}
+
 	const allItemsById = new Map(allItems.map((wi) => [wi.id, wi]));
 	const groups = new Map<number, GroupedItem>();
 	const orderedGroups: GroupedItem[] = [];
@@ -176,7 +289,7 @@ function groupItemsForColumn(allItems: WorkItem[], column: WorkItem['boardColumn
 		}
 
 		const parent = allItemsById.get(item.parentId);
-		if (!parent || !isParentType(parent)) {
+		if (!parent || !isParentType(parent) || parent.boardColumn !== column) {
 			orderedGroups.push({ item, children: [] });
 			continue;
 		}
@@ -189,6 +302,10 @@ function groupItemsForColumn(allItems: WorkItem[], column: WorkItem['boardColumn
 		}
 
 		group.children.push(item);
+	}
+
+	for (const group of orderedGroups) {
+		group.children = sortWorkItems(group.children, sortBy);
 	}
 
 	return orderedGroups;

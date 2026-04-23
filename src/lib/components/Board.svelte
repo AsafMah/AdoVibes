@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { WorkItem, CreateWorkItemRequest, UpdateWorkItemRequest } from '$lib/stores/app.svelte';
-	import type { GroupedItem } from '$lib/stores/workitems.svelte';
+	import type { BoardGrouping, GroupedItem } from '$lib/stores/workitems.svelte';
 	import BoardColumn from './BoardColumn.svelte';
 	import CreateItemDialog from './CreateItemDialog.svelte';
 	import WorkItemDetail from './WorkItemDetail.svelte';
@@ -12,6 +12,7 @@
 		newItems: WorkItem[];
 		activeItems: WorkItem[];
 		doneItems: WorkItem[];
+		groupMode: BoardGrouping;
 		iterationPath: string;
 		onMoveItem: (id: number, workItemType: string, targetColumn: string) => void;
 		onCreateItem: (request: CreateWorkItemRequest) => void;
@@ -23,6 +24,7 @@
 		newItems,
 		activeItems,
 		doneItems,
+		groupMode,
 		iterationPath,
 		onMoveItem,
 		onCreateItem,
@@ -175,6 +177,7 @@
 		column="new"
 		groups={groupedByColumn.new}
 		items={newItems}
+		dragEnabled={groupMode === 'flat'}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
@@ -186,6 +189,7 @@
 		column="active"
 		groups={groupedByColumn.active}
 		items={activeItems}
+		dragEnabled={groupMode === 'flat'}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
@@ -197,6 +201,7 @@
 		column="done"
 		groups={groupedByColumn.done}
 		items={doneItems}
+		dragEnabled={groupMode === 'flat'}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
