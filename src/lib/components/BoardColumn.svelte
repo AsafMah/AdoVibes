@@ -4,7 +4,6 @@
 	import type { GroupedItem } from '$lib/stores/workitems.svelte';
 	import PbiGroup from './PbiGroup.svelte';
 	import WorkItemCard from './WorkItemCard.svelte';
-	import { dndzone } from 'svelte-dnd-action';
 
 	interface Props {
 		title: string;
@@ -35,33 +34,11 @@
 	};
 
 	const flipDurationMs = 150;
-	type DragEntry = { id: number; item: WorkItem; children: WorkItem[] };
-	const TASK_DRAG_MIME = 'application/x-adovibes-task';
+	const BOARD_ITEM_DRAG_MIME = 'application/x-adovibes-work-item';
 
-	let dragEntries = $state<DragEntry[]>([]);
-
-	$effect(() => {
-		dragEntries = groups.map((group) => ({ id: group.item.id, item: group.item, children: group.children }));
-	});
-
-	function handleDndConsider(e: CustomEvent<{ items: DragEntry[] }>) {
-		dragEntries = e.detail.items;
-	}
-
-	function handleDndFinalize(e: CustomEvent<{ items: DragEntry[] }>) {
-		const droppedEntries = e.detail.items;
-		dragEntries = droppedEntries;
-		const currentIds = new Set(groups.map((group) => group.item.id));
-		for (const entry of droppedEntries) {
-			if (!currentIds.has(entry.id)) {
-				onDropItem?.(entry.item.id, column);
-			}
-		}
-	}
-
-	function handleTaskDragStart(event: DragEvent, item: WorkItem) {
+	function handleItemDragStart(event: DragEvent, item: WorkItem) {
 		event.dataTransfer?.setData(
-			TASK_DRAG_MIME,
+			BOARD_ITEM_DRAG_MIME,
 			JSON.stringify({
 				id: item.id,
 				workItemType: item.workItemType,
@@ -73,12 +50,12 @@
 		}
 	}
 
-	function handleTaskDragOver(event: DragEvent) {
+	function handleItemDragOver(event: DragEvent) {
 		if (!dragEnabled || movingItemId !== null) {
 			return;
 		}
 
-		const payload = event.dataTransfer?.types.includes(TASK_DRAG_MIME);
+		const payload = event.dataTransfer?.types.includes(BOARD_ITEM_DRAG_MIME);
 		if (!payload) {
 			return;
 		}
@@ -89,12 +66,12 @@
 		}
 	}
 
-	function handleTaskDrop(event: DragEvent) {
+	function handleItemDrop(event: DragEvent) {
 		if (!dragEnabled || movingItemId !== null) {
 			return;
 		}
 
-		const raw = event.dataTransfer?.getData(TASK_DRAG_MIME);
+		const raw = event.dataTransfer?.getData(BOARD_ITEM_DRAG_MIME);
 		if (!raw) {
 			return;
 		}
@@ -119,55 +96,51 @@
 		<div
 			class="board-column flex-1 overflow-y-auto p-2"
 			role="presentation"
-			use:dndzone={{
-				items: dragEntries,
-				flipDurationMs,
-				dropTargetStyle: { outline: '2px solid #6366f1', borderRadius: '0.5rem' }
-			}}
-			ondragover={handleTaskDragOver}
-			ondrop={handleTaskDrop}
-			onconsider={handleDndConsider}
-			onfinalize={handleDndFinalize}
+			ondragover={handleItemDragOver}
+			ondrop={handleItemDrop}
 		>
-			{#each dragEntries as entry (entry.id)}
+			{#each groups as group (group.item.id)}
 				<div class="mb-2" animate:flip={{ duration: flipDurationMs }}>
-					{#if entry.children.length > 0}
+					{#if group.children.length > 0}
 						<PbiGroup
-							parent={entry.item}
-							children={entry.children}
+							parent={group.item}
+							children={group.children}
 							{movingItemId}
 							{selectedItemId}
+							isParentDraggable={movingItemId === null}
 							{onSelectItem}
 							{onOpenItem}
 							{onAddTask}
-							onTaskDragStart={handleTaskDragStart}
+							onParentDragStart={handleItemDragStart}
+							onTaskDragStart={handleItemDragStart}
 						/>
-					{:else if entry.item.workItemType === 'Task'}
+					{:else if group.item.workItemType === 'Task'}
 						<WorkItemCard
-							item={entry.item}
-							isBusy={movingItemId === entry.item.id}
+							item={group.item}
+							isBusy={movingItemId === group.item.id}
 							isDraggable={movingItemId === null}
-							isSelected={selectedItemId === entry.item.id}
-							onSelect={() => onSelectItem?.(entry.item)}
-							onOpen={() => onOpenItem?.(entry.item)}
-							onDragStart={(event) => handleTaskDragStart(event, entry.item)}
+							isSelected={selectedItemId === group.item.id}
+							onSelect={() => onSelectItem?.(group.item)}
+							onOpen={() => onOpenItem?.(group.item)}
+							onDragStart={(event) => handleItemDragStart(event, group.item)}
 						/>
 					{:else}
 						<PbiGroup
-							parent={entry.item}
+							parent={group.item}
 							children={[]}
 							{movingItemId}
 							{selectedItemId}
+							isParentDraggable={movingItemId === null}
 							{onSelectItem}
 							{onOpenItem}
 							{onAddTask}
-							onTaskDragStart={handleTaskDragStart}
+							onParentDragStart={handleItemDragStart}
 						/>
 					{/if}
 				</div>
 			{/each}
 
-			{#if dragEntries.length === 0}
+			{#if groups.length === 0}
 				<div class="flex h-24 items-center justify-center rounded-lg border-2 border-dashed border-surface-300 dark:border-surface-600 text-sm text-surface-400 dark:text-surface-500">
 					No items
 				</div>

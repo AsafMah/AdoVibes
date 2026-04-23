@@ -7,9 +7,12 @@
 		children: WorkItem[];
 		movingItemId?: number | null;
 		selectedItemId?: number | null;
+		isParentDraggable?: boolean;
 		onSelectItem?: (item: WorkItem) => void;
 		onOpenItem?: (item: WorkItem) => void;
 		onAddTask?: (parent: WorkItem) => void;
+		onParentDragStart?: (event: DragEvent, item: WorkItem) => void;
+		onParentDragEnd?: (event: DragEvent, item: WorkItem) => void;
 		onTaskDragStart?: (event: DragEvent, item: WorkItem) => void;
 		onTaskDragEnd?: (event: DragEvent, item: WorkItem) => void;
 	}
@@ -19,9 +22,12 @@
 		children,
 		movingItemId = null,
 		selectedItemId = null,
+		isParentDraggable = false,
 		onSelectItem,
 		onOpenItem,
 		onAddTask,
+		onParentDragStart,
+		onParentDragEnd,
 		onTaskDragStart,
 		onTaskDragEnd
 	}: Props = $props();
@@ -36,9 +42,12 @@
 	<WorkItemCard
 		item={parent}
 		isBusy={movingItemId === parent.id}
+		isDraggable={isParentDraggable}
 		isSelected={selectedItemId === parent.id}
 		onSelect={() => onSelectItem?.(parent)}
 		onOpen={() => onOpenItem?.(parent)}
+		onDragStart={(event) => onParentDragStart?.(event, parent)}
+		onDragEnd={(event) => onParentDragEnd?.(event, parent)}
 	/>
 
 	{#if children.length > 0}
