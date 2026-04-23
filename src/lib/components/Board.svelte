@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { WorkItem, CreateWorkItemRequest, UpdateWorkItemRequest } from '$lib/stores/app.svelte';
-	import type { BoardGrouping, GroupedItem } from '$lib/stores/workitems.svelte';
+	import type { GroupedItem } from '$lib/stores/workitems.svelte';
 	import BoardColumn from './BoardColumn.svelte';
 	import CreateItemDialog from './CreateItemDialog.svelte';
 	import WorkItemDetail from './WorkItemDetail.svelte';
@@ -12,11 +12,12 @@
 		newItems: WorkItem[];
 		activeItems: WorkItem[];
 		doneItems: WorkItem[];
-		groupMode: BoardGrouping;
 		iterationPath: string;
-		onMoveItem: (id: number, workItemType: string, targetColumn: string) => void;
+		onMoveItem: (id: number, workItemType: string, targetColumn: string) => Promise<WorkItem | null>;
 		onCreateItem: (request: CreateWorkItemRequest) => void;
 		onUpdateItem: (request: UpdateWorkItemRequest) => void;
+		isMovePending: boolean;
+		movingItemId: number | null;
 	}
 
 	let {
@@ -24,11 +25,12 @@
 		newItems,
 		activeItems,
 		doneItems,
-		groupMode,
 		iterationPath,
 		onMoveItem,
 		onCreateItem,
-		onUpdateItem
+		onUpdateItem,
+		isMovePending,
+		movingItemId
 	}: Props = $props();
 
 	let selectedItem = $state<WorkItem | null>(null);
@@ -100,12 +102,10 @@
 				break;
 			}
 			case 'move': {
-				if (!selectedItem) break;
+				if (!selectedItem || isMovePending) break;
 				const nextCol = getNextColumn(focusedColumn, action.direction);
 				if (nextCol) {
-					onMoveItem(selectedItem.id, selectedItem.workItemType, nextCol);
-					focusedColumn = nextCol;
-					selectedItem = { ...selectedItem, boardColumn: nextCol };
+					void moveSelectedItem(selectedItem, nextCol);
 				}
 				break;
 			}
@@ -120,8 +120,8 @@
 				if (selectedItem) detailItem = selectedItem;
 				break;
 			case 'done':
-				if (selectedItem && selectedItem.boardColumn !== 'done') {
-					onMoveItem(selectedItem.id, selectedItem.workItemType, 'done');
+				if (selectedItem && selectedItem.boardColumn !== 'done' && !isMovePending) {
+					void moveSelectedItem(selectedItem, 'done');
 				}
 				break;
 			case 'escape':
@@ -150,11 +150,25 @@
 	}
 
 	function handleDropItem(itemId: number, targetColumn: string) {
+		if (isMovePending) {
+			return;
+		}
+
 		const allItems = [...newItems, ...activeItems, ...doneItems];
 		const item = allItems.find((wi) => wi.id === itemId);
 		if (item) {
-			onMoveItem(item.id, item.workItemType, targetColumn);
+			void moveSelectedItem(item, targetColumn);
 		}
+	}
+
+	async function moveSelectedItem(item: WorkItem, targetColumn: string) {
+		const updated = await onMoveItem(item.id, item.workItemType, targetColumn);
+		if (!updated) {
+			return;
+		}
+
+		focusedColumn = updated.boardColumn as Column;
+		selectedItem = updated;
 	}
 
 	function handleCreateSubmit(request: CreateWorkItemRequest) {
@@ -177,38 +191,47 @@
 		column="new"
 		groups={groupedByColumn.new}
 		items={newItems}
-		dragEnabled={groupMode === 'flat'}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
 		onAddTask={handleAddTask}
 		onDropItem={handleDropItem}
+		movingItemId={movingItemId}
+		dragEnabled={!isMovePending}
 	/>
 	<BoardColumn
 		title="Active"
 		column="active"
 		groups={groupedByColumn.active}
 		items={activeItems}
-		dragEnabled={groupMode === 'flat'}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
 		onAddTask={handleAddTask}
 		onDropItem={handleDropItem}
+		movingItemId={movingItemId}
+		dragEnabled={!isMovePending}
 	/>
 	<BoardColumn
 		title="Done"
 		column="done"
 		groups={groupedByColumn.done}
 		items={doneItems}
-		dragEnabled={groupMode === 'flat'}
 		selectedItemId={selectedItem?.id}
 		onSelectItem={handleSelectItem}
 		onOpenItem={handleOpenItem}
 		onAddTask={handleAddTask}
 		onDropItem={handleDropItem}
+		movingItemId={movingItemId}
+		dragEnabled={!isMovePending}
 	/>
 </div>
+
+{#if isMovePending}
+	<div class="fixed right-4 bottom-12 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-700 shadow-sm dark:border-primary-900/40 dark:bg-primary-950/60 dark:text-primary-300">
+		Saving move...
+	</div>
+{/if}
 
 <!-- Keyboard shortcut hint -->
 <div class="fixed bottom-0 left-0 right-0 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900 px-4 py-1.5 text-xs text-surface-400 dark:text-surface-500">

@@ -177,18 +177,22 @@ export function getAppState() {
 			}
 		},
 
-		async loginWithAzCli() {
+		async loginWithAzCli(org: string) {
 			isLoading = true;
 			error = null;
 			try {
 				await invoke('set_auth_azcli');
+				organization = org;
 				authMethod = 'azcli';
-				const ok = await invoke<boolean>('check_auth_status');
-				isAuthenticated = ok;
-				if (!ok) {
+				const loggedIn = await invoke<boolean>('check_auth_status');
+				if (!loggedIn) {
 					error = 'Azure CLI not logged in. Please run `az login` first.';
+					isAuthenticated = false;
+					return false;
 				}
-				return ok;
+				await invoke('validate_azcli', { organization: org });
+				isAuthenticated = true;
+				return true;
 			} catch (e) {
 				error = `Az CLI auth failed: ${e}`;
 				isAuthenticated = false;
@@ -261,11 +265,19 @@ export function getAppState() {
 					return true;
 				} else if (authMethod === 'azcli') {
 					await invoke('set_auth_azcli');
-					const ok = await invoke<boolean>('check_auth_status');
-					isAuthenticated = ok;
-					return ok;
+					const loggedIn = await invoke<boolean>('check_auth_status');
+					if (!loggedIn) {
+						isAuthenticated = false;
+						return false;
+					}
+					if (organization) {
+						await invoke('validate_azcli', { organization });
+					}
+					isAuthenticated = true;
+					return true;
 				}
-			} catch {
+			} catch (e) {
+				error = `Failed to restore auth: ${e}`;
 				isAuthenticated = false;
 			}
 			return false;

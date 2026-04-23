@@ -29,14 +29,25 @@ async fn check_response(resp: Response, context: &str) -> Result<Response> {
     let url = resp.url().to_string();
     let body = resp.text().await.unwrap_or_default();
     let truncated = if body.len() > 500 { &body[..500] } else { &body };
-    let msg = format!(
-        "{context} — HTTP {status}{retry} — {url}\n{body}",
-        context = context,
-        status = status,
-        retry = retry_after.unwrap_or_default(),
-        url = url,
-        body = truncated,
-    );
+    let msg = if status == reqwest::StatusCode::UNAUTHORIZED && body.contains("TF400813") {
+        format!(
+            "{context} — not authorized to access this Azure DevOps organization with the current account. Verify the organization name and that your Azure CLI or PAT identity has access.\nHTTP {status}{retry} — {url}\n{body}",
+            context = context,
+            status = status,
+            retry = retry_after.unwrap_or_default(),
+            url = url,
+            body = truncated,
+        )
+    } else {
+        format!(
+            "{context} — HTTP {status}{retry} — {url}\n{body}",
+            context = context,
+            status = status,
+            retry = retry_after.unwrap_or_default(),
+            url = url,
+            body = truncated,
+        )
+    };
     warn!("{}", msg);
     anyhow::bail!(msg)
 }
@@ -565,43 +576,4 @@ impl AdoClient {
         Ok(parse_work_item(&raw))
     }
 
-    /// Get all child work item IDs for a parent
-    pub async fn get_child_ids(
-        &self,
-        org: &str,
-        project: &str,
-        parent_id: i32,
-    ) -> Result<Vec<i32>> {
-        let wiql = format!(
-            "SELECT [System.Id] FROM workitemLinks \
-             WHERE ([Source].[System.Id] = {}) \
-             AND ([System.Links.LinkType] = 'System.LinkTypes.Hierarchy-Forward') \
-             MODE (MustContain)",
-            parent_id
-        );
-
-        let url = format!(
-            "{}/{}/_apis/wit/wiql?api-version=7.1",
-            self.base_url(org),
-            project
-        );
-
-        let body = serde_json::json!({ "query": wiql });
-
-        let raw = self.authed_post(&url)?.json(&body).send().await?;
-        let resp: WiqlResponse = check_response(raw, "Failed to query child items")
-            .await?
-            .json()
-            .await?;
-
-        let ids: Vec<i32> = resp
-            .work_item_relations
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|rel| rel.target.map(|t| t.id))
-            .filter(|id| *id != parent_id)
-            .collect();
-
-        Ok(ids)
-    }
 }

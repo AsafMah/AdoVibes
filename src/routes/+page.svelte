@@ -15,6 +15,7 @@
 	const workItemsStore = getWorkItemsState();
 
 	let authChoice = $state<'azcli' | 'pat' | null>(null);
+	let azCliOrgInput = $state('');
 	let patInput = $state('');
 	let patOrgInput = $state('');
 	let searchQuery = $state('');
@@ -22,7 +23,8 @@
 	let assigneeFilter = $state('all');
 	let mineOnly = $state(false);
 	let sortBy = $state<BoardSort>('backlog');
-	let groupBy = $state<BoardGrouping>('flat');
+	let groupBy = $state<BoardGrouping>('hierarchy');
+	let isRestoringSession = $state(false);
 
 	const boardView = $derived.by<BoardViewData>(() =>
 		workItemsStore.getBoardData({
@@ -37,6 +39,14 @@
 	);
 
 	const assignees = $derived(workItemsStore.assignees);
+	const isInitialBoardLoad = $derived(isRestoringSession || app.isLoading || workItemsStore.isLoading);
+	const initialLoadMessage = $derived(
+		isRestoringSession
+			? 'Restoring your board...'
+			: workItemsStore.isLoading
+				? 'Loading sprint items...'
+				: 'Loading Azure DevOps data...'
+	);
 
 	function clearBoardControls() {
 		searchQuery = '';
@@ -44,26 +54,23 @@
 		assigneeFilter = 'all';
 		mineOnly = false;
 		sortBy = 'backlog';
-		groupBy = 'flat';
+		groupBy = 'hierarchy';
 	}
 
 	onMount(async () => {
 		if (app.isSetupComplete) {
+			isRestoringSession = true;
 			const ok = await app.restoreAuth();
 			if (ok) {
-				await app.fetchUser();
-				await app.fetchSprints();
-				if (app.selectedSprint) {
-					await workItemsStore.fetchSprintItems(
-						app.organization,
-						app.project,
-						app.team,
-						app.selectedSprint.path
-					);
-				}
+				await Promise.all([
+					app.fetchUser(),
+					app.fetchSprints(),
+					workItemsStore.primeAuthHeader(true)
+				]);
 			} else {
 				app.resetSetup();
 			}
+			isRestoringSession = false;
 		}
 	});
 
@@ -79,6 +86,8 @@
 				app.team,
 				app.selectedSprint!.path
 			);
+		} else if (!sprintId) {
+			lastSprintId = null;
 		}
 	});
 
@@ -96,21 +105,18 @@
 
 	async function handleSetupComplete() {
 		app.completeSetup();
-		await app.fetchUser();
-		await app.fetchSprints();
-		if (app.selectedSprint) {
-			await workItemsStore.fetchSprintItems(
-				app.organization,
-				app.project,
-				app.team,
-				app.selectedSprint.path
-			);
-		}
+		await Promise.all([
+			app.fetchUser(),
+			app.fetchSprints(),
+			workItemsStore.primeAuthHeader(true)
+		]);
 	}
 
 	async function handleAzCliLogin() {
-		const ok = await app.loginWithAzCli();
+		if (!azCliOrgInput.trim()) return;
+		const ok = await app.loginWithAzCli(azCliOrgInput.trim());
 		if (ok) {
+			await workItemsStore.primeAuthHeader(true);
 			authChoice = null;
 		}
 	}
@@ -119,12 +125,13 @@
 		if (!patInput.trim() || !patOrgInput.trim()) return;
 		const ok = await app.loginWithPat(patInput.trim(), patOrgInput.trim());
 		if (ok) {
+			await workItemsStore.primeAuthHeader(true);
 			authChoice = null;
 		}
 	}
 
 	function handleMoveItem(id: number, workItemType: string, targetColumn: string) {
-		workItemsStore.moveItem(app.organization, app.project, id, workItemType, targetColumn);
+		return workItemsStore.moveItem(app.organization, app.project, id, workItemType, targetColumn);
 	}
 
 	async function handleCreateItem(request: CreateWorkItemRequest) {
@@ -184,15 +191,28 @@
 
 					<div class="rounded-lg bg-blue-50 dark:bg-blue-900/20 p-4 text-sm text-blue-800 dark:text-blue-300">
 						<p class="font-semibold">Azure CLI Login</p>
-						<p class="mt-1">Make sure you've run <code class="rounded bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 font-mono text-xs">az login</code> in your terminal.</p>
+						<p class="mt-1">Make sure you've run <code class="rounded bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 font-mono text-xs">az login</code> in your terminal, then enter the Azure DevOps organization you want to access.</p>
+					</div>
+
+					<div>
+						<label for="azcli-org" class="block text-sm font-medium text-surface-700 dark:text-surface-200">Organization</label>
+						<input
+							id="azcli-org"
+							type="text"
+							class="mt-1 w-full rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-sm text-surface-900 dark:text-surface-100 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+							placeholder="your-organization"
+							bind:value={azCliOrgInput}
+							onkeydown={(e) => { if (e.key === 'Enter') handleAzCliLogin(); }}
+						/>
+						<p class="mt-1 text-xs text-surface-400 dark:text-surface-500">From https://dev.azure.com/<strong>{azCliOrgInput || 'your-org'}</strong></p>
 					</div>
 
 					<button
 						class="w-full rounded-lg bg-primary-500 py-2.5 text-sm font-medium text-white hover:bg-primary-600 disabled:opacity-50"
 						onclick={handleAzCliLogin}
-						disabled={app.isLoading}
+						disabled={app.isLoading || !azCliOrgInput.trim()}
 					>
-						{app.isLoading ? 'Checking...' : 'Connect with Azure CLI'}
+						{app.isLoading ? 'Checking access...' : 'Connect with Azure CLI'}
 					</button>
 				</div>
 			{:else if authChoice === 'pat'}
@@ -273,11 +293,12 @@
 		</div>
 	{/if}
 
-	{#if workItemsStore.isLoading}
+	{#if isInitialBoardLoad}
 		<div class="flex h-full items-center justify-center">
-			<div class="text-center">
-				<div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
-				<p class="mt-2 text-sm text-surface-500 dark:text-surface-400">Loading sprint items...</p>
+			<div class="rounded-2xl border border-surface-200 bg-white/80 px-8 py-10 text-center shadow-sm dark:border-surface-800 dark:bg-surface-900/80">
+				<div class="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
+				<p class="mt-4 text-sm font-medium text-surface-700 dark:text-surface-200">{initialLoadMessage}</p>
+				<p class="mt-1 text-xs text-surface-500 dark:text-surface-400">This can take a few seconds while Azure DevOps responds.</p>
 			</div>
 		</div>
 	{:else if app.selectedSprint}
@@ -351,28 +372,15 @@
 						</select>
 					</label>
 
-					<label class="flex flex-col gap-1 text-sm text-surface-600 dark:text-surface-300">
-						<span class="text-xs font-medium uppercase tracking-wide">Grouping</span>
-						<select
-							class="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm text-surface-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
-							bind:value={groupBy}
-						>
-							<option value="hierarchy">Parent and subtasks</option>
-							<option value="flat">Flat list</option>
-						</select>
-					</label>
-
 					<label class="flex items-center gap-2 rounded-lg border border-surface-300 px-3 py-2 text-sm text-surface-700 dark:border-surface-700 dark:text-surface-200">
 						<input type="checkbox" class="h-4 w-4" bind:checked={mineOnly} />
 						<span>Only my items</span>
 					</label>
 				</div>
 
-				{#if groupBy === 'hierarchy'}
-					<p class="mt-2 text-xs text-surface-500 dark:text-surface-400">
-						Hierarchy grouping keeps parent and subtask cards together. Switch to Flat list to drag individual tasks between columns.
-					</p>
-				{/if}
+				<p class="mt-2 text-xs text-surface-500 dark:text-surface-400">
+					Drag PBIs or Bugs as groups, or drag individual task cards on their own.
+				</p>
 			</div>
 
 			<div class="min-h-0 flex-1">
@@ -381,11 +389,12 @@
 					newItems={boardView.newItems}
 					activeItems={boardView.activeItems}
 					doneItems={boardView.doneItems}
-					groupMode={groupBy}
 					iterationPath={app.selectedSprint.path}
 					onMoveItem={handleMoveItem}
 					onCreateItem={handleCreateItem}
 					onUpdateItem={handleUpdateItem}
+					isMovePending={workItemsStore.isMovePending}
+					movingItemId={workItemsStore.movingItemId}
 				/>
 			</div>
 		</div>

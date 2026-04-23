@@ -5,13 +5,26 @@
 	interface Props {
 		parent: WorkItem;
 		children: WorkItem[];
+		movingItemId?: number | null;
 		selectedItemId?: number | null;
 		onSelectItem?: (item: WorkItem) => void;
 		onOpenItem?: (item: WorkItem) => void;
 		onAddTask?: (parent: WorkItem) => void;
+		onTaskDragStart?: (event: DragEvent, item: WorkItem) => void;
+		onTaskDragEnd?: (event: DragEvent, item: WorkItem) => void;
 	}
 
-	let { parent, children, selectedItemId = null, onSelectItem, onOpenItem, onAddTask }: Props = $props();
+	let {
+		parent,
+		children,
+		movingItemId = null,
+		selectedItemId = null,
+		onSelectItem,
+		onOpenItem,
+		onAddTask,
+		onTaskDragStart,
+		onTaskDragEnd
+	}: Props = $props();
 
 	let expanded = $state(true);
 
@@ -22,6 +35,7 @@
 <div class="rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-900">
 	<WorkItemCard
 		item={parent}
+		isBusy={movingItemId === parent.id}
 		isSelected={selectedItemId === parent.id}
 		onSelect={() => onSelectItem?.(parent)}
 		onOpen={() => onOpenItem?.(parent)}
@@ -44,9 +58,13 @@
 			{#each children as child (child.id)}
 				<WorkItemCard
 					item={child}
+					isBusy={movingItemId === child.id}
+					isDraggable={movingItemId === null}
 					isSelected={selectedItemId === child.id}
 					onSelect={() => onSelectItem?.(child)}
 					onOpen={() => onOpenItem?.(child)}
+					onDragStart={(event) => onTaskDragStart?.(event, child)}
+					onDragEnd={(event) => onTaskDragEnd?.(event, child)}
 				/>
 			{/each}
 		</div>

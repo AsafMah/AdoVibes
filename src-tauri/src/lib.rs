@@ -6,7 +6,7 @@ mod work_items;
 
 use ado_client::AdoClient;
 use tauri_plugin_log::{Target, TargetKind};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,9 +25,11 @@ pub fn run() {
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
                 .build(),
         )
-        .manage(Mutex::new(AdoClient::new()))
+        .manage(RwLock::new(AdoClient::new()))
         .invoke_handler(tauri::generate_handler![
             auth::check_auth_status,
+            auth::validate_azcli,
+            auth::get_auth_header,
             auth::get_current_user,
             auth::set_auth_pat,
             auth::set_auth_azcli,
@@ -41,8 +43,6 @@ pub fn run() {
             work_items::create_work_item,
             work_items::update_work_item,
             work_items::move_work_item,
-            work_items::mark_item_done_cascade,
-            work_items::sync_parent_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

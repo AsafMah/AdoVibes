@@ -3,12 +3,25 @@
 
 	interface Props {
 		item: WorkItem;
+		isBusy?: boolean;
 		isSelected?: boolean;
+		isDraggable?: boolean;
 		onSelect?: () => void;
 		onOpen?: () => void;
+		onDragStart?: (event: DragEvent) => void;
+		onDragEnd?: (event: DragEvent) => void;
 	}
 
-	let { item, isSelected = false, onSelect, onOpen }: Props = $props();
+	let {
+		item,
+		isBusy = false,
+		isSelected = false,
+		isDraggable = false,
+		onSelect,
+		onOpen,
+		onDragStart,
+		onDragEnd
+	}: Props = $props();
 
 	const typeColors: Record<string, string> = {
 		'Product Backlog Item': 'bg-blue-500',
@@ -27,32 +40,52 @@
 	};
 
 	function handleClick() {
+		if (isBusy) return;
 		onSelect?.();
 	}
 
 	function handleDblClick() {
+		if (isBusy) return;
 		onOpen?.();
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		if (isBusy) return;
 		if (e.key === 'Enter') {
 			e.preventDefault();
 			onOpen?.();
 		}
+	}
+
+	function handleDragStart(event: DragEvent) {
+		if (!isDraggable || isBusy) {
+			event.preventDefault();
+			return;
+		}
+		onDragStart?.(event);
+	}
+
+	function handleDragEnd(event: DragEvent) {
+		onDragEnd?.(event);
 	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="card rounded-md border p-3 transition-all cursor-pointer
+		{isBusy ? 'opacity-70 cursor-wait' : ''}
+		{isDraggable && !isBusy ? 'cursor-grab active:cursor-grabbing' : ''}
 		{isSelected ? 'ring-2 ring-primary-500 border-primary-500 bg-surface-100 dark:bg-surface-800' : 'border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-900 hover:border-surface-400 dark:hover:border-surface-500'}
 		{item.workItemType === 'Task' ? 'ml-4 border-l-2' : ''}"
 	style="border-left-color: {item.workItemType === 'Task' ? '#eab308' : 'inherit'}"
-	tabindex="0"
+	tabindex={isBusy ? -1 : 0}
 	role="button"
+	draggable={isDraggable && !isBusy}
 	onclick={handleClick}
 	ondblclick={handleDblClick}
 	onkeydown={handleKeydown}
+	ondragstart={handleDragStart}
+	ondragend={handleDragEnd}
 	data-item-id={item.id}
 >
 	<div class="flex items-start gap-2">
@@ -61,6 +94,11 @@
 			<div class="flex items-center gap-1.5">
 				<span class="text-xs font-medium text-surface-500 dark:text-surface-400">{typeLabels[item.workItemType] || item.workItemType}</span>
 				<span class="text-xs text-surface-400 dark:text-surface-500">#{item.id}</span>
+				{#if isBusy}
+					<span class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+						Moving...
+					</span>
+				{/if}
 			</div>
 			<p class="mt-0.5 text-sm font-medium leading-snug text-surface-800 dark:text-surface-100 line-clamp-2">{item.title}</p>
 		</div>

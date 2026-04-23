@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
-use std::process::Command;
+use std::env;
+use std::path::PathBuf;
+use std::process::{Command, Output};
 
 use crate::ado_client::AdoClient;
 use crate::types::UserProfile;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tauri::State;
 
 /// Authentication method for Azure DevOps
@@ -30,28 +32,144 @@ impl AuthMethod {
             }
         }
     }
+
+    pub fn auth_header_value(&self) -> Result<String> {
+        match self {
+            AuthMethod::AzCli => Ok(format!("Bearer {}", get_az_cli_token()?)),
+            AuthMethod::Pat(pat) => {
+                use base64::Engine;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(format!(":{}", pat));
+                Ok(format!("Basic {}", encoded))
+            }
+        }
+    }
 }
 
 /// Get an Azure DevOps access token by shelling out to `az account get-access-token`.
 /// Requires the user to have run `az login` beforehand.
-pub fn get_az_cli_token() -> Result<String> {
-    let output = Command::new("az")
-        .args([
-            "account",
-            "get-access-token",
-            "--resource",
-            "499b84ac-1321-427f-aa17-267ca6975798",
-            "--query",
-            "accessToken",
-            "--output",
-            "tsv",
-        ])
+fn resolve_az_cli() -> Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        let mut candidates = Vec::new();
+
+        if let Some(path) = env::var_os("PATH") {
+            for dir in env::split_paths(&path) {
+                candidates.push(dir.join("az.cmd"));
+                candidates.push(dir.join("az.exe"));
+                candidates.push(dir.join("az.bat"));
+            }
+        }
+
+        candidates.push(PathBuf::from(
+            r"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
+        ));
+        candidates.push(PathBuf::from(
+            r"C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
+        ));
+
+        if let Some(path) = candidates.into_iter().find(|candidate| candidate.is_file()) {
+            return Ok(path);
+        }
+
+        anyhow::bail!(
+            "Failed to find Azure CLI. Ensure `az` is installed and available in PATH."
+        );
+    }
+
+    #[cfg(not(windows))]
+    {
+        Ok(PathBuf::from("az"))
+    }
+}
+
+fn run_az(args: &[&str]) -> Result<Output> {
+    let az = resolve_az_cli()?;
+    Command::new(&az)
+        .args(args)
         .output()
-        .context("Failed to run 'az' command. Is Azure CLI installed?")?;
+        .with_context(|| format!("Failed to run Azure CLI at '{}'.", az.display()))
+}
+
+fn is_not_logged_in(stderr: &str) -> bool {
+    stderr.contains("AADSTS")
+        || stderr.contains("Please run 'az login'")
+        || stderr.contains("az login")
+        || stderr.contains("No subscriptions found")
+}
+
+fn current_az_cli_user() -> Option<String> {
+    let output = run_az(&["account", "show", "--query", "user.name", "--output", "tsv"]).ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let user = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if user.is_empty() {
+        None
+    } else {
+        Some(user)
+    }
+}
+
+async fn validate_auth_for_organization(
+    auth: &AuthMethod,
+    organization: &str,
+) -> Result<()> {
+    let http = reqwest::Client::new();
+    let req = http.get(format!(
+        "https://dev.azure.com/{}/_apis/connectionData",
+        organization
+    ));
+    let req = auth.apply_auth(req)?;
+    let resp = req.send().await?;
+    let status = resp.status();
+
+    if status.is_success() {
+        return Ok(());
+    }
+
+    let body = resp.text().await.unwrap_or_default();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        let identity = current_az_cli_user();
+        if body.contains("TF400813") {
+            if let Some(identity) = identity {
+                anyhow::bail!(
+                    "Azure CLI is logged in as '{}', but that account is not authorized for Azure DevOps organization '{}'.",
+                    identity,
+                    organization
+                );
+            }
+
+            anyhow::bail!(
+                "Azure CLI is logged in, but the current account is not authorized for Azure DevOps organization '{}'.",
+                organization
+            );
+        }
+    }
+
+    anyhow::bail!(
+        "Failed to validate Azure DevOps access for organization '{}': HTTP {} — {}",
+        organization,
+        status,
+        body.trim()
+    );
+}
+
+pub fn get_az_cli_token() -> Result<String> {
+    let output = run_az(&[
+        "account",
+        "get-access-token",
+        "--resource",
+        "499b84ac-1321-427f-aa17-267ca6975798",
+        "--query",
+        "accessToken",
+        "--output",
+        "tsv",
+    ])?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("AADSTS") || stderr.contains("Please run 'az login'") {
+        if is_not_logged_in(&stderr) {
             anyhow::bail!("Not logged in. Please run 'az login' in your terminal first.");
         }
         anyhow::bail!("az account get-access-token failed: {}", stderr.trim());
@@ -71,14 +189,16 @@ pub fn get_az_cli_token() -> Result<String> {
 
 /// Check if az CLI is installed and user is logged in
 pub fn check_auth() -> Result<bool> {
-    let output = Command::new("az")
-        .args(["account", "show", "--query", "user.name", "--output", "tsv"])
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => Ok(true),
-        Ok(_) => Ok(false),
-        Err(_) => Ok(false),
+    match get_az_cli_token() {
+        Ok(_) => Ok(true),
+        Err(err) => {
+            let message = err.to_string();
+            if message.contains("Not logged in") {
+                Ok(false)
+            } else {
+                Err(err)
+            }
+        }
     }
 }
 
@@ -89,13 +209,31 @@ pub async fn check_auth_status() -> Result<bool, String> {
     check_auth().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn validate_azcli(organization: String) -> Result<(), String> {
+    validate_auth_for_organization(&AuthMethod::AzCli, &organization)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_auth_header(
+    client: State<'_, RwLock<AdoClient>>,
+) -> Result<String, String> {
+    let client = client.read().await;
+    client
+        .auth_method()
+        .auth_header_value()
+        .map_err(|e| e.to_string())
+}
+
 /// Set authentication to use a Personal Access Token
 #[tauri::command]
 pub async fn set_auth_pat(
-    client: State<'_, Mutex<AdoClient>>,
+    client: State<'_, RwLock<AdoClient>>,
     pat: String,
 ) -> Result<(), String> {
-    let mut client = client.lock().await;
+    let mut client = client.write().await;
     client.set_auth(AuthMethod::Pat(pat));
     Ok(())
 }
@@ -103,9 +241,9 @@ pub async fn set_auth_pat(
 /// Set authentication to use Azure CLI
 #[tauri::command]
 pub async fn set_auth_azcli(
-    client: State<'_, Mutex<AdoClient>>,
+    client: State<'_, RwLock<AdoClient>>,
 ) -> Result<(), String> {
-    let mut client = client.lock().await;
+    let mut client = client.write().await;
     client.set_auth(AuthMethod::AzCli);
     Ok(())
 }
@@ -135,10 +273,10 @@ pub async fn validate_pat(
 
 #[tauri::command]
 pub async fn get_current_user(
-    client: State<'_, Mutex<AdoClient>>,
+    client: State<'_, RwLock<AdoClient>>,
     organization: String,
 ) -> Result<UserProfile, String> {
-    let client = client.lock().await;
+    let client = client.read().await;
     let http = reqwest::Client::new();
 
     let req = http.get("https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1");
@@ -161,6 +299,13 @@ pub async fn get_current_user(
             .send()
             .await
             .map_err(|e| format!("Failed to fetch connection data: {}", e))?;
+
+        if !resp2.status().is_success() {
+            return Err(format!(
+                "Failed to fetch connection data: HTTP {}",
+                resp2.status()
+            ));
+        }
 
         let data: serde_json::Value = resp2
             .json()

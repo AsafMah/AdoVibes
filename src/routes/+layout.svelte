@@ -16,6 +16,7 @@
 		theme.init();
 		// Forward Rust logs to browser devtools console
 		attachConsole();
+		document.body.dataset.appReady = 'true';
 	});
 </script>
 
