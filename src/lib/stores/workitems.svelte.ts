@@ -8,6 +8,7 @@ let isLoading = $state(false);
 let error = $state<string | null>(null);
 let movingItemId = $state<number | null>(null);
 let loadingSprintKey: string | null = null;
+let latestSprintRequestKey: string | null = null;
 let cachedAuthHeader: string | null = null;
 let cachedAuthHeaderExpiresAt = 0;
 const AUTH_HEADER_TTL_MS = 5 * 60 * 1000;
@@ -92,20 +93,28 @@ export function getWorkItemsState() {
 			isLoading = true;
 			error = null;
 			loadingSprintKey = sprintKey;
+			latestSprintRequestKey = sprintKey;
 			try {
-				workItems = await invoke<WorkItem[]>('get_sprint_work_items', {
+				const items = await invoke<WorkItem[]>('get_sprint_work_items', {
 					organization,
 					project,
 					team,
 					iterationPath
 				});
+				if (latestSprintRequestKey === sprintKey) {
+					workItems = items;
+				}
 			} catch (e) {
-				error = `Failed to load work items: ${e}`;
+				if (latestSprintRequestKey === sprintKey) {
+					error = `Failed to load work items: ${e}`;
+				}
 			} finally {
 				if (loadingSprintKey === sprintKey) {
 					loadingSprintKey = null;
 				}
-				isLoading = false;
+				if (latestSprintRequestKey === sprintKey) {
+					isLoading = false;
+				}
 			}
 		},
 

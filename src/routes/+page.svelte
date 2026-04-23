@@ -75,19 +75,21 @@
 	});
 
 	// Reload work items when sprint changes
-	let lastSprintId = $state<string | null>(null);
+	let lastSprintKey = $state<string | null>(null);
 	$effect(() => {
-		const sprintId = app.selectedSprint?.id ?? null;
-		if (sprintId && sprintId !== lastSprintId && app.isSetupComplete) {
-			lastSprintId = sprintId;
+		const sprintKey = app.selectedSprint
+			? `${app.selectedSprint.id}::${app.selectedSprint.path}`
+			: null;
+		if (sprintKey && sprintKey !== lastSprintKey && app.isSetupComplete) {
+			lastSprintKey = sprintKey;
 			workItemsStore.fetchSprintItems(
 				app.organization,
 				app.project,
 				app.team,
 				app.selectedSprint!.path
 			);
-		} else if (!sprintId) {
-			lastSprintId = null;
+		} else if (!sprintKey) {
+			lastSprintKey = null;
 		}
 	});
 

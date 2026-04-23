@@ -35,16 +35,16 @@
 
 	const flipDurationMs = 150;
 	const BOARD_ITEM_DRAG_MIME = 'application/x-adovibes-work-item';
+	const BOARD_ITEM_TEXT_PREFIX = 'adovibes-work-item:';
 
 	function handleItemDragStart(event: DragEvent, item: WorkItem) {
-		event.dataTransfer?.setData(
-			BOARD_ITEM_DRAG_MIME,
-			JSON.stringify({
-				id: item.id,
-				workItemType: item.workItemType,
-				sourceColumn: item.boardColumn
-			})
-		);
+		const payload = JSON.stringify({
+			id: item.id,
+			workItemType: item.workItemType,
+			sourceColumn: item.boardColumn
+		});
+		event.dataTransfer?.setData(BOARD_ITEM_DRAG_MIME, payload);
+		event.dataTransfer?.setData('text/plain', `${BOARD_ITEM_TEXT_PREFIX}${payload}`);
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'move';
 		}
@@ -55,7 +55,11 @@
 			return;
 		}
 
-		const payload = event.dataTransfer?.types.includes(BOARD_ITEM_DRAG_MIME);
+		const dragTypes = event.dataTransfer?.types ?? [];
+		const payload =
+			dragTypes.includes(BOARD_ITEM_DRAG_MIME) ||
+			dragTypes.includes('text/plain') ||
+			dragTypes.includes('Text');
 		if (!payload) {
 			return;
 		}
@@ -71,13 +75,19 @@
 			return;
 		}
 
-		const raw = event.dataTransfer?.getData(BOARD_ITEM_DRAG_MIME);
+		const raw =
+			event.dataTransfer?.getData(BOARD_ITEM_DRAG_MIME) ||
+			event.dataTransfer?.getData('text/plain') ||
+			event.dataTransfer?.getData('Text');
 		if (!raw) {
 			return;
 		}
 
 		event.preventDefault();
-		const payload = JSON.parse(raw) as { id: number; sourceColumn: string };
+		const serialized = raw.startsWith(BOARD_ITEM_TEXT_PREFIX)
+			? raw.slice(BOARD_ITEM_TEXT_PREFIX.length)
+			: raw;
+		const payload = JSON.parse(serialized) as { id: number; sourceColumn: string };
 		if (payload.sourceColumn !== column) {
 			onDropItem?.(payload.id, column);
 		}
